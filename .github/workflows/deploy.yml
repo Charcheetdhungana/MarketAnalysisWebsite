@@ -1,0 +1,80 @@
+name: Daily Market Update
+
+# ---------------------------------------------------------------------
+# WHY THERE ARE TWO SCHEDULES
+#
+# GitHub Actions cron is always in UTC and it does not know about US
+# daylight saving. 16:15 New York time is:
+#     20:15 UTC in summer (EDT, UTC-4)
+#     21:15 UTC in winter (EST, UTC-5)
+#
+# So we fire at both times all year. main.py checks the real New York
+# clock and quietly exits if the market has not closed yet, and skips
+# the work if the earlier run already finished it. So in practice only
+# one of the two does anything - and if the first one fails, the second
+# is a free automatic retry.
+# ---------------------------------------------------------------------
+
+on:
+  schedule:
+    - cron: '15 20 * * 1-5'   # 16:15 ET during US summer time
+    - cron: '15 21 * * 1-5'   # 16:15 ET during US winter time
+  workflow_dispatch:          # adds a "Run workflow" button in the Actions tab
+    inputs:
+      force:
+        description: 'Run even if the market has not closed (yes/no)'
+        required: false
+        default: 'no'
+
+# Stop two runs from writing at the same time.
+concurrency:
+  group: daily-market-update
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  update:
+    name: Fetch data and update dashboard
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install Python libraries
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run the daily update
+        env:
+          SUPABASE_URL:         ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          GEMINI_API_KEY:       ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_MODEL:         ${{ vars.GEMINI_MODEL || 'gemini-3.5-flash' }}
+        run: |
+          if [ "${{ github.event.inputs.force }}" = "yes" ]; then
+            python main.py --force
+          else
+            python main.py
+          fi
+
+      - name: Report failure clearly
+        if: failure()
+        run: |
+          echo "::error::The daily market update failed."
+          echo "Common causes, most likely first:"
+          echo "  1. Yahoo Finance changed or blocked yfinance."
+          echo "  2. A GitHub Secret is missing or was pasted with a stray space."
+          echo "  3. The Supabase project was paused for inactivity."
+          echo "  4. The Gemini free-tier daily quota ran out."
+          echo "Scroll up to the 'Run the daily update' step for the real error."

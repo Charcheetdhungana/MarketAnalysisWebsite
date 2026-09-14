@@ -1,0 +1,1075 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nasdaq 100 Market Dashboard</title>
+<meta name="description" content="Daily QQQ and sector ETF dashboard with EMAs, relative strength and an AI market outlook.">
+<style>
+/* ===================================================================
+   DESIGN TOKENS
+   Every colour is defined once here. Light values on :root, dark
+   values redefined in two places: the OS setting, and the manual
+   toggle. That way the toggle always wins.
+   =================================================================== */
+:root{
+  color-scheme: light;
+  --page:#f9f9f7;
+  --surface:#fcfcfb;
+  --ink:#0b0b0b;
+  --ink-2:#52514e;
+  --ink-muted:#898781;
+  --grid:#e1e0d9;
+  --axis:#c3c2b7;
+  --border:rgba(11,11,11,.10);
+  --up:#0ca30c;
+  --up-text:#006300;
+  --down:#d03b3b;
+  --warn:#fab219;
+  /* ordered blue ramp for EMA 9 / 20 / 50 / 200 - validated light */
+  --ema9:#86b6ef; --ema20:#5598e7; --ema50:#2a78d6; --ema200:#184f95;
+  /* diverging pair for relative strength: blue = beat, red = lagged */
+  --pos:#2a78d6; --neg:#d03b3b; --mid:#f0efec;
+  --radius:12px;
+  --shadow:0 1px 2px rgba(11,11,11,.04), 0 6px 18px rgba(11,11,11,.05);
+}
+@media (prefers-color-scheme: dark){
+  :root:where(:not([data-theme="light"])){
+    color-scheme: dark;
+    --page:#0d0d0d; --surface:#1a1a19;
+    --ink:#ffffff; --ink-2:#c3c2b7; --ink-muted:#898781;
+    --grid:#2c2c2a; --axis:#383835; --border:rgba(255,255,255,.10);
+    --up:#0ca30c; --up-text:#0ca30c; --down:#d03b3b;
+    --ema9:#b7d3f6; --ema20:#6da7ec; --ema50:#3987e5; --ema200:#1c5cab;
+    --pos:#3987e5; --neg:#d03b3b; --mid:#383835;
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 6px 18px rgba(0,0,0,.3);
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme: dark;
+  --page:#0d0d0d; --surface:#1a1a19;
+  --ink:#ffffff; --ink-2:#c3c2b7; --ink-muted:#898781;
+  --grid:#2c2c2a; --axis:#383835; --border:rgba(255,255,255,.10);
+  --up:#0ca30c; --up-text:#0ca30c; --down:#d03b3b;
+  --ema9:#b7d3f6; --ema20:#6da7ec; --ema50:#3987e5; --ema200:#1c5cab;
+  --pos:#3987e5; --neg:#d03b3b; --mid:#383835;
+  --shadow:0 1px 2px rgba(0,0,0,.4), 0 6px 18px rgba(0,0,0,.3);
+}
+
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  background:var(--page); color:var(--ink);
+  font:15px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif;
+  -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:1180px;margin:0 auto;padding:20px 16px 64px}
+a{color:inherit}
+
+/* ---------- header ---------- */
+header.top{
+  display:flex;flex-wrap:wrap;gap:12px;align-items:baseline;
+  justify-content:space-between;margin-bottom:6px;
+}
+h1{font-size:21px;font-weight:650;margin:0;letter-spacing:-.01em}
+.sub{color:var(--ink-muted);font-size:13px;margin:2px 0 22px}
+.toolbar{display:flex;gap:8px;align-items:center}
+button.ghost{
+  font:inherit;font-size:13px;background:var(--surface);color:var(--ink-2);
+  border:1px solid var(--border);border-radius:8px;padding:6px 11px;cursor:pointer;
+}
+button.ghost:hover{color:var(--ink)}
+button.ghost[aria-pressed="true"]{color:var(--ink);border-color:var(--axis)}
+
+/* ---------- section headings ---------- */
+h2{
+  font-size:12px;font-weight:650;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--ink-muted);margin:36px 0 12px;
+  display:flex;align-items:center;gap:10px;
+}
+h2::after{content:"";flex:1;height:1px;background:var(--grid)}
+h3{font-size:14px;font-weight:620;margin:0 0 10px}
+
+/* ---------- cards ---------- */
+.card{
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:var(--radius);padding:16px;box-shadow:var(--shadow);
+}
+.grid{display:grid;gap:14px}
+.g2{grid-template-columns:repeat(auto-fit,minmax(270px,1fr))}
+.g3{grid-template-columns:repeat(auto-fit,minmax(200px,1fr))}
+
+/* ---------- hero price tiles ---------- */
+.hero{display:flex;flex-direction:column;gap:4px}
+.hero .sym{font-size:12px;font-weight:650;letter-spacing:.06em;color:var(--ink-muted)}
+.hero .nm{font-size:12px;color:var(--ink-muted);margin-top:-2px}
+.hero .px{font-size:38px;font-weight:600;letter-spacing:-.02em;line-height:1.1;margin-top:6px}
+.hero .dl{font-size:15px;font-weight:560;display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
+.up{color:var(--up-text)} .down{color:var(--down)} .flat{color:var(--ink-muted)}
+
+/* ---------- sector table ---------- */
+/* A table that is wider than its card scrolls sideways on its own.
+   The fade on the right edge is the hint that there is more to see -
+   without it, a phone user just sees a column sliced in half. */
+.tbl-scroll{position:relative}
+.tbl-scroll .scroller{overflow-x:auto;-webkit-overflow-scrolling:touch}
+.tbl-scroll[data-overflow="true"]::after{
+  content:"";position:absolute;top:0;right:0;bottom:0;width:38px;
+  pointer-events:none;border-radius:0 8px 8px 0;
+  background:linear-gradient(to right,transparent,var(--surface));
+}
+.scrollhint{
+  font-size:11.5px;color:var(--ink-muted);margin:7px 0 0;display:none;
+}
+.tbl-scroll[data-overflow="true"] + .scrollhint{display:block}
+table{border-collapse:collapse;width:100%;font-size:13.5px;min-width:430px}
+th,td{padding:9px 10px;text-align:right;white-space:nowrap}
+th:first-child,td:first-child{text-align:left}
+th{
+  font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--ink-muted);border-bottom:1px solid var(--axis);
+}
+td{border-bottom:1px solid var(--grid);font-variant-numeric:tabular-nums}
+tbody tr:hover td{background:color-mix(in srgb,var(--ink) 3.5%,transparent)}
+.rank{
+  display:inline-flex;align-items:center;justify-content:center;
+  width:19px;height:19px;border-radius:5px;font-size:11px;font-weight:650;
+  background:color-mix(in srgb,var(--pos) 16%,transparent);color:var(--pos);
+  margin-right:8px;vertical-align:middle;
+}
+.rank.dim{background:color-mix(in srgb,var(--ink) 7%,transparent);color:var(--ink-muted)}
+.sig{
+  font-size:11px;font-weight:600;padding:2px 7px;border-radius:999px;
+  border:1px solid currentColor;white-space:nowrap;
+}
+/* Relative strength keeps the chart's blue/red wherever it appears, so the
+   same number is never blue in the chart and green in the table. Green and
+   red stay reserved for the day's price move. */
+.rs-pos{color:var(--pos)} .rs-neg{color:var(--neg)} .rs-zero{color:var(--ink-muted)}
+
+/* ---------- charts ---------- */
+figure{margin:0}
+figcaption{font-size:12px;color:var(--ink-muted);margin-top:10px}
+svg{display:block;width:100%;height:auto;overflow:visible}
+.legend{display:flex;flex-wrap:wrap;gap:6px 16px;margin:2px 0 12px;font-size:12px;color:var(--ink-2)}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.swatch{width:14px;height:3px;border-radius:2px;flex:none}
+.swatch.sq{width:10px;height:10px;border-radius:3px}
+.tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
+.tabs button{
+  font:inherit;font-size:12.5px;font-weight:560;padding:5px 12px;cursor:pointer;
+  background:transparent;color:var(--ink-muted);
+  border:1px solid var(--border);border-radius:999px;
+}
+.tabs button[aria-selected="true"]{
+  background:color-mix(in srgb,var(--pos) 14%,transparent);
+  color:var(--pos);border-color:transparent;
+}
+
+/* tooltip */
+.tip{
+  position:fixed;pointer-events:none;z-index:50;opacity:0;transition:opacity .09s;
+  background:var(--surface);color:var(--ink);border:1px solid var(--axis);
+  border-radius:9px;padding:9px 11px;font-size:12.5px;box-shadow:var(--shadow);
+  font-variant-numeric:tabular-nums;max-width:250px;
+}
+.tip.on{opacity:1}
+.tip b{display:block;font-size:11px;color:var(--ink-muted);font-weight:600;margin-bottom:5px}
+.tip .row{display:flex;justify-content:space-between;gap:14px}
+.tip .row i{font-style:normal;display:inline-flex;align-items:center;gap:6px;color:var(--ink-2)}
+
+/* ---------- AI blocks ---------- */
+.prose{font-size:14.5px;line-height:1.65;color:var(--ink-2);margin:0}
+.prose + .prose{margin-top:10px}
+.bias{
+  display:inline-flex;align-items:center;gap:7px;font-size:12px;font-weight:650;
+  letter-spacing:.05em;text-transform:uppercase;padding:5px 12px;border-radius:999px;
+}
+.bias.bullish{background:color-mix(in srgb,var(--up) 15%,transparent);color:var(--up-text)}
+.bias.bearish{background:color-mix(in srgb,var(--down) 15%,transparent);color:var(--down)}
+.bias.neutral{background:color-mix(in srgb,var(--ink) 8%,transparent);color:var(--ink-2)}
+ul.plain{margin:8px 0 0;padding-left:19px;color:var(--ink-2);font-size:14px;line-height:1.6}
+ul.plain li{margin-bottom:5px}
+.chips{display:flex;flex-wrap:wrap;gap:7px;margin-top:8px}
+.chip{
+  font-size:12px;font-variant-numeric:tabular-nums;padding:4px 10px;border-radius:7px;
+  border:1px solid var(--border);color:var(--ink-2);background:var(--page);
+}
+
+/* ---------- news ---------- */
+.news{list-style:none;margin:0;padding:0}
+.news li{padding:13px 0;border-bottom:1px solid var(--grid)}
+.news li:last-child{border-bottom:0;padding-bottom:0}
+.news a{font-weight:580;text-decoration:none;font-size:14.5px;line-height:1.4}
+.news a:hover{text-decoration:underline}
+.news p{margin:5px 0 0;font-size:13.5px;color:var(--ink-2);line-height:1.55}
+.news .src{font-size:11.5px;color:var(--ink-muted);margin-top:6px}
+
+/* ---------- calendar ---------- */
+.cal{list-style:none;margin:0;padding:0}
+.cal li{
+  display:flex;gap:13px;align-items:flex-start;padding:11px 0;
+  border-bottom:1px solid var(--grid);
+}
+.cal li:last-child{border-bottom:0}
+.cal .when{min-width:86px;flex:none}
+.cal .d{font-size:13px;font-weight:620}
+.cal .t{font-size:11.5px;color:var(--ink-muted)}
+.cal .ev{flex:1}
+.cal .nm{font-size:13.5px;font-weight:520}
+.cal .meta{font-size:11.5px;color:var(--ink-muted);margin-top:2px;font-variant-numeric:tabular-nums}
+.imp{
+  font-size:10.5px;font-weight:650;letter-spacing:.05em;text-transform:uppercase;
+  padding:2px 7px;border-radius:5px;flex:none;margin-top:1px;
+}
+.imp.high{background:color-mix(in srgb,var(--down) 15%,transparent);color:var(--down)}
+.imp.medium{background:color-mix(in srgb,var(--warn) 22%,transparent);color:var(--ink-2)}
+.imp.low{background:color-mix(in srgb,var(--ink) 7%,transparent);color:var(--ink-muted)}
+
+/* ---------- misc ---------- */
+.muted{color:var(--ink-muted);font-size:13.5px}
+.err{
+  border:1px solid var(--down);border-radius:var(--radius);padding:16px;
+  background:color-mix(in srgb,var(--down) 7%,transparent);
+}
+.err h3{color:var(--down);margin-bottom:6px}
+.err code{
+  display:block;background:var(--surface);padding:9px 11px;border-radius:7px;
+  margin-top:9px;font-size:12px;overflow-x:auto;
+}
+.skel{
+  height:13px;border-radius:6px;margin:9px 0;
+  background:linear-gradient(90deg,var(--grid),var(--surface),var(--grid));
+  background-size:200% 100%;animation:sh 1.3s linear infinite;
+}
+@keyframes sh{to{background-position:-200% 0}}
+footer{
+  margin-top:44px;padding-top:18px;border-top:1px solid var(--grid);
+  font-size:12px;color:var(--ink-muted);line-height:1.6;
+}
+.disclaimer{
+  margin-top:26px;padding:13px 15px;border-radius:var(--radius);
+  border:1px solid var(--border);background:var(--surface);
+  font-size:12.5px;color:var(--ink-muted);line-height:1.6;
+}
+[hidden]{display:none !important}
+@media (max-width:520px){
+  .hero .px{font-size:31px}
+  .wrap{padding:16px 14px 48px}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="top">
+    <div>
+      <h1>Nasdaq 100 Market Dashboard</h1>
+      <p class="sub" id="subtitle">Loading&hellip;</p>
+    </div>
+    <div class="toolbar">
+      <button class="ghost" id="tableToggle" aria-pressed="false">Table view</button>
+      <button class="ghost" id="themeToggle" title="Switch light / dark">Theme</button>
+    </div>
+  </header>
+
+  <div id="boot">
+    <div class="card"><div class="skel" style="width:40%"></div>
+    <div class="skel" style="width:75%"></div><div class="skel" style="width:60%"></div></div>
+  </div>
+
+  <main id="app" hidden>
+
+    <!-- ============ SECTION A ============ -->
+    <h2>A &nbsp;&middot;&nbsp; Daily Market Summary</h2>
+    <div class="grid g2" id="heroes"></div>
+
+    <div class="grid g2" style="margin-top:14px">
+      <div class="card">
+        <h3>Sector performance &amp; relative strength</h3>
+        <p class="muted" style="margin:-4px 0 14px">
+          Relative strength is the sector&rsquo;s move minus QQQ&rsquo;s move.
+          Positive means money flowed <em>into</em> that sector today.
+        </p>
+        <div id="rsChart"></div>
+      </div>
+      <div class="card">
+        <h3>Sector detail</h3>
+        <div class="tbl-scroll"><div class="scroller"><table id="sectorTable"></table></div></div>
+        <p class="scrollhint">Scroll the table sideways to see every column.</p>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:14px">
+      <h3>What drove the market today</h3>
+      <p class="prose" id="newsSummary"></p>
+      <ul class="news" id="headlines"></ul>
+      <p class="muted" id="sourceLine" style="margin-top:14px"></p>
+    </div>
+
+    <!-- ============ SECTION B ============ -->
+    <h2>B &nbsp;&middot;&nbsp; Technicals &amp; Predictive Outlook</h2>
+
+    <div class="card">
+      <h3>Price vs exponential moving averages</h3>
+      <div class="tabs" id="emaTabs" role="tablist"></div>
+      <div id="emaChart"></div>
+      <div class="tbl-scroll" style="margin-top:16px"><div class="scroller"><table id="emaTable"></table></div></div>
+      <p class="scrollhint">Scroll the table sideways to see every column.</p>
+    </div>
+
+    <div class="grid g2" style="margin-top:14px">
+      <div class="card">
+        <h3>Technical read</h3>
+        <p class="prose" id="aiTechnical"></p>
+        <div class="chips" id="levels"></div>
+      </div>
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px">
+          <h3 style="margin:0">Outlook for next session</h3>
+          <span class="bias" id="bias"></span>
+        </div>
+        <p class="prose" id="aiOutlook"></p>
+        <div id="risksWrap" hidden>
+          <p class="muted" style="margin:14px 0 0;font-weight:600">What could go wrong</p>
+          <ul class="plain" id="risks"></ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ SECTION C ============ -->
+    <h2>C &nbsp;&middot;&nbsp; This Week &amp; Calendar</h2>
+    <div class="grid g2">
+      <div class="card">
+        <h3>Week to date</h3>
+        <p class="muted" id="weekRange" style="margin:-4px 0 14px"></p>
+        <div id="weekChart"></div>
+      </div>
+      <div class="card">
+        <h3>Upcoming economic events</h3>
+        <ul class="cal" id="calendar"></ul>
+      </div>
+    </div>
+
+    <p class="disclaimer">
+      <strong>Not financial advice.</strong> The written outlook on this page is
+      produced by a language model reading a table of numbers and public news. It
+      can be wrong, and it does not know your situation. Prices come from Yahoo
+      Finance via the unofficial <code>yfinance</code> library and are not
+      guaranteed to be accurate. Do your own research.
+    </p>
+
+    <footer>
+      <span id="footMeta"></span>
+    </footer>
+  </main>
+
+  <div id="fatal" hidden></div>
+</div>
+
+<div class="tip" id="tip" role="tooltip"></div>
+
+<script>
+/* ===================================================================
+   1. CONFIGURATION  <-- EDIT THESE TWO LINES
+   Both values are safe to have in a public web page. The anon key is
+   read-only and is further locked down by Row Level Security.
+   =================================================================== */
+const SUPABASE_URL      = "https://YOUR-PROJECT-REF.supabase.co";
+const SUPABASE_ANON_KEY = "YOUR-PUBLISHABLE-KEY";
+
+/* ===================================================================
+   2. SMALL HELPERS
+   =================================================================== */
+const $  = (id) => document.getElementById(id);
+const el = (tag, cls, txt) => {
+  const n = document.createElement(tag);
+  if (cls) n.className = cls;
+  if (txt != null) n.textContent = txt;
+  return n;
+};
+const num = (v, nd = 2) =>
+  (v === null || v === undefined || v === "" || isNaN(+v))
+    ? "–" : (+v).toFixed(nd);
+const pct = (v, nd = 2) =>
+  (v === null || v === undefined || isNaN(+v))
+    ? "–" : ((+v > 0 ? "+" : "") + (+v).toFixed(nd) + "%");
+const dirClass = (v) => (v > 0 ? "up" : v < 0 ? "down" : "flat");
+const arrow    = (v) => (v > 0 ? "▲" : v < 0 ? "▼" : "▬");
+const fmtDate  = (iso, opts) => {
+  if (!iso) return "";
+  const d = new Date(iso + "T12:00:00Z");
+  return d.toLocaleDateString("en-AU",
+    opts || { weekday:"short", day:"numeric", month:"short", year:"numeric" });
+};
+const esc = (s) => String(s ?? "");
+
+async function sb(path) {
+  // Supabase has two generations of keys and they are sent differently.
+  //
+  //   NEW  sb_publishable_...  is a plain string, not a JWT. It goes on the
+  //        apikey header only. Putting it on Authorization: Bearer works for
+  //        now but nothing downstream can verify it as a token, so we don't.
+  //   OLD  eyJ...              is a JWT. It goes on both headers, which is
+  //        what every older Supabase tutorial tells you to do.
+  //
+  // This works with either, so the page keeps working when you migrate.
+  const isLegacyJwt = SUPABASE_ANON_KEY.startsWith("eyJ");
+  const headers = { apikey: SUPABASE_ANON_KEY, Accept: "application/json" };
+  if (isLegacyJwt) headers.Authorization = `Bearer ${SUPABASE_ANON_KEY}`;
+
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, { headers });
+  if (!res.ok) throw new Error(`${res.status} ${res.statusText} on ${path}`);
+  return res.json();
+}
+
+/* ===================================================================
+   3. TOOLTIP  (shared by every chart)
+   =================================================================== */
+const tip = $("tip");
+function showTip(evt, html) {
+  tip.innerHTML = html;
+  tip.classList.add("on");
+  const pad = 14, r = tip.getBoundingClientRect();
+  let x = evt.clientX + pad, y = evt.clientY + pad;
+  if (x + r.width  > innerWidth  - 8) x = evt.clientX - r.width  - pad;
+  if (y + r.height > innerHeight - 8) y = evt.clientY - r.height - pad;
+  tip.style.left = Math.max(8, x) + "px";
+  tip.style.top  = Math.max(8, y) + "px";
+}
+const hideTip = () => tip.classList.remove("on");
+
+/* ===================================================================
+   4. CHART: multi-line, price + EMAs, with crosshair
+   -------------------------------------------------------------------
+   Hand-drawn SVG. No chart library, so nothing to download and nothing
+   to break. The EMA lines use one blue hue stepped light-to-dark,
+   because EMA 9 -> 200 is an ordered scale, not four unrelated things.
+   =================================================================== */
+const EMA_KEYS = [
+  { k:"ema9",   label:"EMA 9",   v:"--ema9"   },
+  { k:"ema20",  label:"EMA 20",  v:"--ema20"  },
+  { k:"ema50",  label:"EMA 50",  v:"--ema50"  },
+  { k:"ema200", label:"EMA 200", v:"--ema200" }
+];
+
+function lineChart(mount, series) {
+  mount.innerHTML = "";
+  if (!series || !series.dates || series.dates.length < 2) {
+    mount.appendChild(el("p", "muted", "Not enough history to draw this chart yet."));
+    return;
+  }
+
+  const legend = el("div", "legend");
+  const addLeg = (color, label) => {
+    const s = el("span");
+    const sw = el("span", "swatch");
+    sw.style.background = color;
+    s.append(sw, document.createTextNode(label));
+    legend.appendChild(s);
+  };
+  addLeg("var(--ink)", "Close");
+  EMA_KEYS.forEach(e => { if (series[e.k]) addLeg(`var(${e.v})`, e.label); });
+  mount.appendChild(legend);
+
+  const W = 780, H = 300;
+  const M = { t: 12, r: 56, b: 26, l: 8 };
+  const iw = W - M.l - M.r, ih = H - M.t - M.b;
+  const n  = series.dates.length;
+
+  // y-scale from every visible value
+  let lo = Infinity, hi = -Infinity;
+  const pools = [series.close, ...EMA_KEYS.map(e => series[e.k])].filter(Boolean);
+  pools.forEach(a => a.forEach(v => {
+    if (v === null || v === undefined || isNaN(v)) return;
+    if (v < lo) lo = v; if (v > hi) hi = v;
+  }));
+  if (!isFinite(lo) || !isFinite(hi)) return;
+  const pad = (hi - lo) * 0.07 || 1;
+  lo -= pad; hi += pad;
+
+  const X = i => M.l + (n === 1 ? iw / 2 : (i / (n - 1)) * iw);
+  const Y = v => M.t + ih - ((v - lo) / (hi - lo)) * ih;
+
+  const NS = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(NS, "svg");
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  svg.setAttribute("role", "img");
+  svg.setAttribute("aria-label",
+    `${series.name} closing price with EMA 9, 20, 50 and 200 over the last ${n} sessions.`);
+
+  const mk = (tag, attrs) => {
+    const e = document.createElementNS(NS, tag);
+    for (const k in attrs) e.setAttribute(k, attrs[k]);
+    return e;
+  };
+
+  // horizontal gridlines + right-hand price axis
+  const ticks = 5;
+  for (let i = 0; i <= ticks; i++) {
+    const v = lo + (hi - lo) * (i / ticks), y = Y(v);
+    svg.appendChild(mk("line", {
+      x1:M.l, x2:M.l+iw, y1:y, y2:y, stroke:"var(--grid)", "stroke-width":1
+    }));
+    const t = mk("text", {
+      x:M.l+iw+8, y:y+4, fill:"var(--ink-muted)", "font-size":11,
+      "font-family":"system-ui,sans-serif"
+    });
+    t.textContent = v.toFixed(1);
+    svg.appendChild(t);
+  }
+
+  // date labels along the bottom
+  [0, Math.floor((n - 1) / 2), n - 1].forEach((i, k) => {
+    const t = mk("text", {
+      x:X(i), y:H-6, fill:"var(--ink-muted)", "font-size":11,
+      "font-family":"system-ui,sans-serif",
+      "text-anchor": k === 0 ? "start" : k === 1 ? "middle" : "end"
+    });
+    t.textContent = fmtDate(series.dates[i], { day:"numeric", month:"short" });
+    svg.appendChild(t);
+  });
+
+  const path = (arr) => {
+    let d = "", pen = false;
+    arr.forEach((v, i) => {
+      if (v === null || v === undefined || isNaN(v)) { pen = false; return; }
+      d += (pen ? "L" : "M") + X(i).toFixed(2) + " " + Y(v).toFixed(2) + " ";
+      pen = true;
+    });
+    return d.trim();
+  };
+
+  // EMAs behind, price in front
+  EMA_KEYS.forEach(e => {
+    if (!series[e.k]) return;
+    const d = path(series[e.k]);
+    if (d) svg.appendChild(mk("path", {
+      d, fill:"none", stroke:`var(${e.v})`, "stroke-width":2,
+      "stroke-linecap":"round", "stroke-linejoin":"round"
+    }));
+  });
+  svg.appendChild(mk("path", {
+    d: path(series.close), fill:"none", stroke:"var(--ink)",
+    "stroke-width":2, "stroke-linecap":"round", "stroke-linejoin":"round"
+  }));
+
+  // crosshair layer
+  const cross = mk("line", {
+    x1:0, x2:0, y1:M.t, y2:M.t+ih, stroke:"var(--axis)",
+    "stroke-width":1, "stroke-dasharray":"3 3", opacity:0
+  });
+  svg.appendChild(cross);
+  const dot = mk("circle", {
+    r:4.5, fill:"var(--ink)", stroke:"var(--surface)", "stroke-width":2, opacity:0
+  });
+  svg.appendChild(dot);
+
+  const hit = mk("rect", {
+    x:M.l, y:M.t, width:iw, height:ih, fill:"transparent",
+    style:"cursor:crosshair"
+  });
+  svg.appendChild(hit);
+
+  function move(evt) {
+    const box = svg.getBoundingClientRect();
+    const px  = ((evt.clientX - box.left) / box.width) * W;
+    let i = Math.round(((px - M.l) / iw) * (n - 1));
+    i = Math.max(0, Math.min(n - 1, i));
+
+    cross.setAttribute("x1", X(i)); cross.setAttribute("x2", X(i));
+    cross.setAttribute("opacity", 1);
+    const cv = series.close[i];
+    if (cv != null) {
+      dot.setAttribute("cx", X(i)); dot.setAttribute("cy", Y(cv));
+      dot.setAttribute("opacity", 1);
+    }
+
+    let rows = `<div class="row"><i><span class="swatch" style="background:var(--ink)"></span>Close</i><span>${num(cv)}</span></div>`;
+    EMA_KEYS.forEach(e => {
+      if (!series[e.k]) return;
+      const v = series[e.k][i];
+      if (v == null) return;
+      rows += `<div class="row"><i><span class="swatch" style="background:var(${e.v})"></span>${e.label}</i><span>${num(v)}</span></div>`;
+    });
+    showTip(evt, `<b>${fmtDate(series.dates[i])}</b>${rows}`);
+  }
+  hit.addEventListener("mousemove", move);
+  hit.addEventListener("touchmove", (e) => {
+    if (e.touches[0]) move(e.touches[0]);
+  }, { passive:true });
+  hit.addEventListener("mouseleave", () => {
+    hideTip(); cross.setAttribute("opacity", 0); dot.setAttribute("opacity", 0);
+  });
+
+  mount.appendChild(svg);
+}
+
+/* ===================================================================
+   5. CHART: diverging horizontal bars
+   Used for relative strength and for weekly performance. Blue = above
+   zero, red = below. Every bar also carries its signed number, so the
+   colour is never the only thing telling you the direction.
+   =================================================================== */
+function divergingBars(mount, items, unit, ariaLabel) {
+  mount.innerHTML = "";
+  if (!items.length) {
+    mount.appendChild(el("p", "muted", "No data yet."));
+    return;
+  }
+
+  const legend = el("div", "legend");
+  [["--pos", "Above zero"], ["--neg", "Below zero"]].forEach(([v, t]) => {
+    const s = el("span"), sw = el("span", "swatch sq");
+    sw.style.background = `var(${v})`;
+    s.append(sw, document.createTextNode(t));
+    legend.appendChild(s);
+  });
+  mount.appendChild(legend);
+
+  const rowH = 27, gap = 5, padT = 4;
+  const W = 560, H = padT + items.length * (rowH + gap);
+  const labelW = 54, valueW = 66;
+  const plotL = labelW, plotW = W - labelW - valueW;
+  const mid = plotL + plotW / 2;
+
+  const peak = Math.max(...items.map(d => Math.abs(+d.value || 0)), 0.001);
+  const half = plotW / 2 - 6;
+  const len  = v => (Math.abs(v) / peak) * half;
+
+  const NS = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(NS, "svg");
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  svg.setAttribute("role", "img");
+  svg.setAttribute("aria-label", ariaLabel);
+  const mk = (tag, a) => {
+    const e = document.createElementNS(NS, tag);
+    for (const k in a) e.setAttribute(k, a[k]);
+    return e;
+  };
+
+  // the zero line - the neutral midpoint of the diverging scale
+  svg.appendChild(mk("line", {
+    x1:mid, x2:mid, y1:0, y2:H, stroke:"var(--axis)", "stroke-width":1
+  }));
+
+  items.forEach((d, i) => {
+    const v = +d.value || 0;
+    const y = padT + i * (rowH + gap);
+    const w = Math.max(len(v), 2);
+    const positive = v >= 0;
+    const x = positive ? mid : mid - w;
+
+    const g = mk("g", { style:"cursor:default" });
+
+    // 4px rounded ends, anchored to the zero baseline
+    g.appendChild(mk("rect", {
+      x, y: y + 5, width: w, height: rowH - 10,
+      rx: 4, fill: positive ? "var(--pos)" : "var(--neg)"
+    }));
+    // square off the end touching the baseline
+    g.appendChild(mk("rect", {
+      x: positive ? mid : mid - 4, y: y + 5, width: 4, height: rowH - 10,
+      fill: positive ? "var(--pos)" : "var(--neg)"
+    }));
+
+    const lbl = mk("text", {
+      x: labelW - 10, y: y + rowH / 2 + 4, "text-anchor":"end",
+      fill:"var(--ink-2)", "font-size":12, "font-weight":560,
+      "font-family":"system-ui,sans-serif"
+    });
+    lbl.textContent = d.label;
+    g.appendChild(lbl);
+
+    const val = mk("text", {
+      x: W - 8, y: y + rowH / 2 + 4, "text-anchor":"end",
+      fill:"var(--ink-2)", "font-size":12,
+      "font-family":"system-ui,sans-serif",
+      style:"font-variant-numeric:tabular-nums"
+    });
+    val.textContent = (v > 0 ? "+" : "") + v.toFixed(2) + unit;
+    g.appendChild(val);
+
+    g.appendChild(mk("rect", {
+      x:0, y, width:W, height:rowH, fill:"transparent"
+    }));
+
+    g.addEventListener("mousemove", (e) => showTip(e,
+      `<b>${esc(d.label)}${d.name ? " · " + esc(d.name) : ""}</b>` +
+      `<div class="row"><i>${esc(d.valueLabel || "Value")}</i>` +
+      `<span>${(v > 0 ? "+" : "") + v.toFixed(2) + unit}</span></div>` +
+      (d.extra || "")));
+    g.addEventListener("mouseleave", hideTip);
+    svg.appendChild(g);
+  });
+
+  mount.appendChild(svg);
+}
+
+/* ===================================================================
+   6. RENDER THE PAGE
+   =================================================================== */
+let STATE = { prices: [], report: null, week: [], events: [] };
+
+function renderHeroes() {
+  const box = $("heroes"); box.innerHTML = "";
+  ["QQQ", "NQ=F"].forEach(sym => {
+    const r = STATE.prices.find(p => p.symbol === sym);
+    if (!r) return;
+    const c = el("div", "card hero");
+    c.append(
+      el("span", "sym", sym),
+      el("span", "nm", r.name || "")
+    );
+    c.appendChild(el("div", "px", num(r.close)));
+    const dl = el("div", `dl ${dirClass(r.change)}`);
+    dl.textContent = `${arrow(r.change)} ${num(r.change)}  (${pct(r.change_pct)})`;
+    c.appendChild(dl);
+
+    const chips = el("div", "chips");
+    EMA_KEYS.forEach(e => {
+      const v = r[e.k];
+      if (v == null) return;
+      const above = +r.close >= +v;
+      const ch = el("div", "chip",
+        `${e.label} ${num(v)} · ${above ? "above" : "below"}`);
+      ch.style.color = above ? "var(--up-text)" : "var(--down)";
+      chips.appendChild(ch);
+    });
+    c.appendChild(chips);
+    box.appendChild(c);
+  });
+}
+
+function renderSectorTable() {
+  const sectors = STATE.prices
+    .filter(p => p.asset_class === "sector")
+    .sort((a, b) => (b.rs_vs_qqq ?? -99) - (a.rs_vs_qqq ?? -99));
+
+  const t = $("sectorTable");
+  t.innerHTML = `<thead><tr>
+    <th>Sector</th><th>Close</th><th>Chg %</th><th>RS vs QQQ</th><th>Trend</th>
+  </tr></thead>`;
+  const tb = el("tbody");
+
+  sectors.forEach((r, i) => {
+    const tr = el("tr");
+
+    const c1 = el("td");
+    const rk = el("span", `rank${i > 2 ? " dim" : ""}`, String(i + 1));
+    c1.append(rk, document.createTextNode(`${r.symbol} · ${r.name || ""}`));
+    tr.appendChild(c1);
+
+    tr.appendChild(el("td", null, num(r.close)));
+
+    const c3 = el("td", dirClass(r.change_pct));
+    c3.textContent = `${arrow(r.change_pct)} ${pct(r.change_pct)}`;
+    tr.appendChild(c3);
+
+    const rs = r.rs_vs_qqq;
+    const c4 = el("td", rs > 0 ? "rs-pos" : rs < 0 ? "rs-neg" : "rs-zero");
+    c4.textContent = pct(rs);
+    tr.appendChild(c4);
+
+    // "Trend" = is price above the EMA 50? A simple, honest signal.
+    const c5 = el("td");
+    if (r.ema50 != null && r.close != null) {
+      const above = +r.close >= +r.ema50;
+      const s = el("span", `sig ${above ? "up" : "down"}`,
+        above ? "▲ EMA 50" : "▼ EMA 50");
+      c5.appendChild(s);
+    } else { c5.textContent = "–"; }
+    tr.appendChild(c5);
+
+    tb.appendChild(tr);
+  });
+  t.appendChild(tb);
+
+  divergingBars(
+    $("rsChart"),
+    sectors.map(r => ({
+      label: r.symbol,
+      name: r.name,
+      value: r.rs_vs_qqq ?? 0,
+      valueLabel: "Relative strength",
+      extra: `<div class="row"><i>Day change</i><span>${pct(r.change_pct)}</span></div>
+              <div class="row"><i>Close</i><span>${num(r.close)}</span></div>`
+    })),
+    "%",
+    "Sector ETFs ranked by relative strength against QQQ today."
+  );
+}
+
+function renderNews() {
+  const rep = STATE.report || {};
+  $("newsSummary").textContent =
+    rep.news_summary || "No market summary was generated for this session.";
+
+  const ul = $("headlines"); ul.innerHTML = "";
+  (rep.headlines || []).forEach(h => {
+    const li = el("li");
+    if (h.url) {
+      const a = el("a", null, h.title || h.url);
+      a.href = h.url; a.target = "_blank"; a.rel = "noopener noreferrer";
+      li.appendChild(a);
+    } else {
+      li.appendChild(el("div", null, h.title || ""));
+    }
+    if (h.summary) li.appendChild(el("p", null, h.summary));
+    if (h.source)  li.appendChild(el("div", "src", h.source));
+    ul.appendChild(li);
+  });
+
+  const srcs = rep.sources || [];
+  $("sourceLine").textContent = srcs.length
+    ? `Gemini searched ${srcs.length} source${srcs.length > 1 ? "s" : ""} to write this summary.`
+    : "";
+}
+
+function renderEma() {
+  const rep = STATE.report || {};
+  const cs  = rep.chart_series || {};
+  const syms = Object.keys(cs);
+  const tabs = $("emaTabs"); tabs.innerHTML = "";
+
+  if (!syms.length) {
+    $("emaChart").innerHTML =
+      '<p class="muted">Chart data will appear after the first successful run.</p>';
+  } else {
+    syms.forEach((s, i) => {
+      const b = el("button", null, s);
+      b.setAttribute("role", "tab");
+      b.setAttribute("aria-selected", i === 0 ? "true" : "false");
+      b.onclick = () => {
+        [...tabs.children].forEach(x => x.setAttribute("aria-selected", "false"));
+        b.setAttribute("aria-selected", "true");
+        lineChart($("emaChart"), cs[s]);
+      };
+      tabs.appendChild(b);
+    });
+    lineChart($("emaChart"), cs[syms[0]]);
+  }
+
+  // EMA table for QQQ + the three strongest sectors
+  const want = [ "QQQ", ...(rep.top_sectors || []) ];
+  const rows = want.map(s => STATE.prices.find(p => p.symbol === s)).filter(Boolean);
+
+  const t = $("emaTable");
+  t.innerHTML = `<thead><tr>
+    <th>Symbol</th><th>Close</th><th>EMA 9</th><th>EMA 20</th>
+    <th>EMA 50</th><th>EMA 200</th><th>Stack</th>
+  </tr></thead>`;
+  const tb = el("tbody");
+
+  rows.forEach(r => {
+    const tr = el("tr");
+    tr.appendChild(el("td", null, `${r.symbol} · ${r.name || ""}`));
+    tr.appendChild(el("td", null, num(r.close)));
+    EMA_KEYS.forEach(e => {
+      const td = el("td", null, num(r[e.k]));
+      if (r[e.k] != null && r.close != null) {
+        td.className = +r.close >= +r[e.k] ? "up" : "down";
+      }
+      tr.appendChild(td);
+    });
+
+    // "Stack" = are the EMAs lined up shortest-above-longest?
+    // That is the classic healthy uptrend shape.
+    const td = el("td");
+    const v = EMA_KEYS.map(e => r[e.k]);
+    if (v.every(x => x != null)) {
+      const bull = v[0] > v[1] && v[1] > v[2] && v[2] > v[3];
+      const bear = v[0] < v[1] && v[1] < v[2] && v[2] < v[3];
+      const label = bull ? "▲ Bullish" : bear ? "▼ Bearish" : "Mixed";
+      const s = el("span", `sig ${bull ? "up" : bear ? "down" : "flat"}`, label);
+      td.appendChild(s);
+    } else { td.textContent = "–"; }
+    tr.appendChild(td);
+    tb.appendChild(tr);
+  });
+  t.appendChild(tb);
+}
+
+function renderOutlook() {
+  const rep = STATE.report || {};
+  $("aiTechnical").textContent =
+    rep.ai_technical || "No technical commentary for this session.";
+  $("aiOutlook").textContent =
+    rep.ai_outlook || "No outlook for this session.";
+
+  const bias = (rep.ai_bias || "neutral").toLowerCase();
+  const b = $("bias");
+  b.className = `bias ${bias}`;
+  b.textContent = `${bias === "bullish" ? "▲" : bias === "bearish" ? "▼" : "▬"} ${bias}`;
+
+  const lv = $("levels"); lv.innerHTML = "";
+  const levels = rep.ai_levels || {};
+  (levels.support || []).forEach(v => {
+    const c = el("div", "chip", `Support ${num(v)}`);
+    c.style.color = "var(--up-text)"; lv.appendChild(c);
+  });
+  (levels.resistance || []).forEach(v => {
+    const c = el("div", "chip", `Resistance ${num(v)}`);
+    c.style.color = "var(--down)"; lv.appendChild(c);
+  });
+
+  const risks = rep.ai_risks || [];
+  $("risksWrap").hidden = !risks.length;
+  const ul = $("risks"); ul.innerHTML = "";
+  risks.forEach(r => ul.appendChild(el("li", null, String(r))));
+}
+
+function renderWeek() {
+  const w = STATE.week
+    .filter(r => r.asset_class !== "futures")
+    .sort((a, b) => (b.week_return_pct ?? -99) - (a.week_return_pct ?? -99));
+
+  if (w.length) {
+    const first = w.reduce((m, r) => r.first_session < m ? r.first_session : m, w[0].first_session);
+    const last  = w.reduce((m, r) => r.last_session  > m ? r.last_session  : m, w[0].last_session);
+    const n     = Math.max(...w.map(r => r.sessions || 0));
+    $("weekRange").textContent =
+      `${fmtDate(first, { day:"numeric", month:"short" })} – ${fmtDate(last)} · ${n} session${n > 1 ? "s" : ""} so far`;
+  }
+
+  divergingBars(
+    $("weekChart"),
+    w.map(r => ({
+      label: r.symbol,
+      name: r.name,
+      value: r.week_return_pct ?? 0,
+      valueLabel: "Week to date",
+      extra: `<div class="row"><i>Sessions</i><span>${r.sessions}</span></div>`
+    })),
+    "%",
+    "Cumulative week-to-date return for QQQ and the sector ETFs."
+  );
+}
+
+function renderCalendar() {
+  const ul = $("calendar"); ul.innerHTML = "";
+  if (!STATE.events.length) {
+    ul.appendChild(el("li", "muted", "No upcoming events recorded."));
+    return;
+  }
+  STATE.events.forEach(e => {
+    const li = el("li");
+    const when = el("div", "when");
+    when.append(
+      el("div", "d", fmtDate(e.event_date, { weekday:"short", day:"numeric", month:"short" })),
+      el("div", "t", e.event_time || "")
+    );
+    const ev = el("div", "ev");
+    ev.appendChild(el("div", "nm", e.event));
+    const bits = [];
+    if (e.forecast) bits.push(`Forecast ${e.forecast}`);
+    if (e.previous) bits.push(`Previous ${e.previous}`);
+    if (bits.length) ev.appendChild(el("div", "meta", bits.join("  ·  ")));
+    li.append(when, ev, el("span", `imp ${e.importance || "medium"}`, e.importance || "med"));
+    ul.appendChild(li);
+  });
+}
+
+/* ===================================================================
+   7. LOAD
+   =================================================================== */
+/* Flag any table that is wider than the card holding it, so the fade and
+   the "scroll sideways" hint only appear when they are actually needed. */
+function markOverflow() {
+  document.querySelectorAll(".tbl-scroll").forEach(box => {
+    const sc = box.querySelector(".scroller");
+    if (!sc) return;
+    box.dataset.overflow = String(sc.scrollWidth > sc.clientWidth + 1);
+  });
+}
+addEventListener("resize", markOverflow);
+
+function mondayOf(iso) {
+  const d = new Date(iso + "T12:00:00Z");
+  const shift = (d.getUTCDay() + 6) % 7;          // Monday = 0
+  d.setUTCDate(d.getUTCDate() - shift);
+  return d.toISOString().slice(0, 10);
+}
+
+function fail(err) {
+  $("boot").hidden = true;
+  const box = $("fatal");
+  box.hidden = false;
+  box.className = "err";
+  box.innerHTML = `
+    <h3>Could not load the dashboard</h3>
+    <p class="muted">Check these, in order:</p>
+    <ul class="plain">
+      <li>Have you pasted your real Supabase URL and anon key at the top of index.html?</li>
+      <li>Did you run <code style="display:inline;padding:1px 5px">schema.sql</code> in the Supabase SQL editor?</li>
+      <li>Has the GitHub Action run at least once and written data?</li>
+      <li>Is the Supabase project awake? Free projects pause after about a week of no activity.</li>
+    </ul>
+    <code>${esc(err.message || err)}</code>`;
+}
+
+async function load() {
+  if (SUPABASE_URL.includes("YOUR-PROJECT-REF")) {
+    return fail(new Error("Supabase URL and anon key have not been filled in yet."));
+  }
+  try {
+    const reports = await sb(
+      "daily_report?select=*&order=trade_date.desc&limit=1");
+    if (!reports.length) throw new Error("No rows in daily_report yet.");
+    const rep = reports[0];
+    const d   = rep.trade_date;
+
+    const today = new Date().toISOString().slice(0, 10);
+    const [prices, week, events] = await Promise.all([
+      sb(`daily_prices?select=*&trade_date=eq.${d}`),
+      sb(`weekly_performance?select=*&week_start=eq.${mondayOf(d)}`),
+      sb(`econ_calendar?select=*&event_date=gte.${today}&order=event_date.asc&limit=18`)
+    ]);
+
+    STATE = { report: rep, prices, week, events };
+
+    $("subtitle").textContent =
+      `Close of ${fmtDate(d)} · ${prices.length} instruments tracked`;
+    $("footMeta").textContent =
+      `Data: Yahoo Finance via yfinance. Commentary: ${rep.model || "Gemini"}. ` +
+      `Last updated ${rep.updated_at ? new Date(rep.updated_at).toLocaleString("en-AU") : "–"}.`;
+
+    renderHeroes();
+    renderSectorTable();
+    renderNews();
+    renderEma();
+    renderOutlook();
+    renderWeek();
+    renderCalendar();
+
+    $("boot").hidden = true;
+    $("app").hidden  = false;
+    markOverflow();
+  } catch (err) {
+    console.error(err);
+    fail(err);
+  }
+}
+
+/* ---- theme toggle ---- */
+$("themeToggle").onclick = () => {
+  const cur = document.documentElement.getAttribute("data-theme");
+  const dark = cur
+    ? cur === "dark"
+    : matchMedia("(prefers-color-scheme: dark)").matches;
+  document.documentElement.setAttribute("data-theme", dark ? "light" : "dark");
+  // redraw so the SVG picks up the new variables
+  if (!$("app").hidden) { renderSectorTable(); renderEma(); renderWeek(); markOverflow(); }
+};
+
+/* ---- table view: hide the charts, keep the numbers ---- */
+$("tableToggle").onclick = (e) => {
+  const on = e.target.getAttribute("aria-pressed") !== "true";
+  e.target.setAttribute("aria-pressed", String(on));
+  ["rsChart", "emaChart", "weekChart"].forEach(id => { $(id).hidden = on; });
+};
+
+load();
+</script>
+</body>
+</html>
