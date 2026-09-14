@@ -6,3 +6,6 @@ venv/
 .DS_Store
 *.log
 PROJECT_LOG.md
+
+.vercel
+.env*
