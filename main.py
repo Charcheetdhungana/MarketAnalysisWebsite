@@ -545,37 +545,35 @@ def build_market_table(rows: list[dict]) -> str:
 
 
 def get_news(g: Gemini, trade_date: str, rows: list[dict]) -> dict:
-    """Gemini call 1: what actually moved the market today."""
-    qqq = next((r for r in rows if r["symbol"] == BENCHMARK), {})
-    prompt = f"""You are a financial news editor. Today is {trade_date} (US market date).
-The Nasdaq 100 ETF (QQQ) closed at {qqq.get('close')}, a move of {qqq.get('change_pct')}%.
+    """
+    Gemini call 1: a data-driven read of today's session.
 
-Search the web for today's US stock market news and identify the real
-macroeconomic and market drivers of this session.
+    Google Search grounding is disabled on this account (it needs billing
+    enabled, separate from the base free text quota), so this deliberately
+    does NOT claim to know today's actual headlines - the model has no way
+    to verify real news without search, and asserting specific stories would
+    violate the whole point of "no invented news". Instead it explains the
+    session using only the price/sector numbers we already computed.
+    """
+    table = build_market_table(rows)
+    prompt = f"""You are a markets analyst. Today is {trade_date} (US market date).
 
-Return ONLY valid JSON in exactly this shape, no other text:
-{{
-  "summary": "2 to 4 sentences in plain English explaining what drove US equities today.",
-  "headlines": [
-    {{"title": "...", "summary": "one sentence", "source": "publication name", "url": "https://..."}}
-  ]
-}}
+Here is today's closing price and sector data:
+{table}
+
+Write 2 to 4 sentences in plain English explaining what this price action
+and sector rotation likely reflects, using ONLY the numbers above.
 
 Rules:
-- Give between 4 and 6 headlines.
-- Only real, verifiable stories from today's session. No invented news.
-- Prefer macro drivers (Fed, inflation, jobs, rates, oil, big tech earnings)
-  over single small-cap stock stories.
-- Use simple, clear language. No jargon without explanation."""
+- Do not name specific news stories, headlines, or events - you cannot verify
+  what actually happened today, so do not claim to know it.
+- Describe it in terms of the data only ("tech-heavy names underperformed
+  while defensive sectors led" rather than "the Fed said X").
+- Simple, clear language, no jargon without explanation.
+- Return ONLY the plain text summary, no JSON, no preamble."""
 
-    raw = g.ask(prompt, search=True)
-    data = extract_json(raw) or {}
-    if not isinstance(data, dict):
-        data = {}
-    return {
-        "summary": str(data.get("summary") or "").strip(),
-        "headlines": data.get("headlines") if isinstance(data.get("headlines"), list) else [],
-    }
+    raw = g.ask(prompt, search=False)
+    return {"summary": raw.strip(), "headlines": []}
 
 
 def get_outlook(g: Gemini, trade_date: str, rows: list[dict],
@@ -598,20 +596,21 @@ the index today.
 
 Today's strongest sectors by relative strength: {', '.join(leaders) or 'n/a'}
 
-Today's news drivers:
+Today's data-driven context:
 {headline_text}
 
-Search the web for any scheduled US economic releases or major earnings in
-the NEXT trading session, then give your professional read.
+Give your professional read based purely on the price/technical data above.
+You do not have live web access, so do not claim to know about specific
+scheduled events, earnings dates, or news - describe the technical setup
+and general risk factors only.
 
 Return ONLY valid JSON in exactly this shape, no other text:
 {{
   "technical": "3 to 5 sentences. Where is QQQ relative to its EMA 9, 20, 50 and 200? Is the short EMA above or below the long EMA, and what does that say about trend? Comment on the sector rotation you see in the RS numbers.",
-  "outlook": "3 to 5 sentences. Your view for the next session, and what would confirm or invalidate it.",
+  "outlook": "3 to 5 sentences. Your view for the next session, and what would confirm or invalidate it, based on the technical setup only.",
   "bias": "bullish or neutral or bearish",
   "levels": {{"support": [numbers], "resistance": [numbers]}},
-  "risks": ["short risk one", "short risk two", "short risk three"],
-  "next_session_events": ["event name and time if known"]
+  "risks": ["short risk one", "short risk two", "short risk three"]
 }}
 
 Rules:
@@ -621,7 +620,7 @@ Rules:
   the setup and the scenarios only.
 - If the data does not support a strong view, say "neutral"."""
 
-    raw = g.ask(prompt, search=True)
+    raw = g.ask(prompt, search=False)
     data = extract_json(raw) or {}
     if not isinstance(data, dict):
         data = {}
@@ -819,10 +818,14 @@ def main() -> int:
         model_used = g.model
         log(f"Using Gemini model: {g.model}")
 
+        # "calendar" (get_calendar) is intentionally not called here: without
+        # Google Search grounding, the model has no way to know real
+        # scheduled event dates (CPI, FOMC, etc.), and presenting guessed
+        # dates as a real calendar would be actively misleading rather than
+        # just lower quality. Re-enable it if grounding is turned back on.
         for label, fn in (
             ("news",     lambda: get_news(g, trade_date, rows)),
             ("outlook",  lambda: get_outlook(g, trade_date, rows, news, leaders)),
-            ("calendar", lambda: get_calendar(g, trade_date)),
         ):
             try:
                 log(f"Gemini: {label} ...")
