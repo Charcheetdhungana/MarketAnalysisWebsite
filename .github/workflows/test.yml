@@ -1,0 +1,37 @@
+name: Tests
+# Runs the logic checks on every push and PR, so a broken change is caught
+# before it reaches production - not after, like the grounding regression
+# earlier caught by hand.
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  test:
+    name: Run test suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install Python libraries
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run maths/logic checks (no network)
+        run: python test_logic.py
+
+      - name: Run already_recorded() timezone checks (no network)
+        run: python test_recorded.py

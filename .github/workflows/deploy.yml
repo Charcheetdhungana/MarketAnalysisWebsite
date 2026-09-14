@@ -34,6 +34,7 @@ concurrency:
 
 permissions:
   contents: read
+  issues: write
 
 jobs:
   update:
@@ -79,3 +80,38 @@ jobs:
           echo "  3. The Supabase project was paused for inactivity."
           echo "  4. The Gemini free-tier daily quota ran out."
           echo "Scroll up to the 'Run the daily update' step for the real error."
+
+      # Turns a silent log failure into something you'll actually see: opens
+      # a GitHub issue (or comments on the existing one, so a bad week
+      # doesn't spam ten separate issues) so it shows up in the repo and
+      # can trigger GitHub's own email notification.
+      - name: Open or update a failure issue
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          existing=$(gh issue list --repo "$GITHUB_REPOSITORY" \
+            --label automated-failure --state open --json number \
+            --jq '.[0].number')
+
+          body="The Daily Market Update workflow failed.
+
+          Run: $RUN_URL
+
+          Common causes, most likely first:
+          1. Yahoo Finance changed or blocked yfinance.
+          2. A GitHub Secret is missing or was pasted with a stray space.
+          3. The Supabase project was paused for inactivity.
+          4. The Gemini free-tier daily quota ran out.
+
+          Close this issue once it's fixed - the next failure will open a fresh one."
+
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --repo "$GITHUB_REPOSITORY" --body "$body"
+          else
+            gh issue create --repo "$GITHUB_REPOSITORY" \
+              --title "Daily Market Update failed ($(date -u +%Y-%m-%d))" \
+              --label automated-failure \
+              --body "$body"
+          fi
