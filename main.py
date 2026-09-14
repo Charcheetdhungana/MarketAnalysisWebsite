@@ -6,9 +6,10 @@ What this file does, in order:
   1. Work out whether the US market actually closed today.
   2. Download 2 years of daily prices for QQQ, NQ futures and 11 sector ETFs.
   3. Work out the day's change, the EMAs (9/20/50/200) and Relative Strength.
-  4. Ask Gemini (with Google Search on) what news drove the day.
+  4. Search the web via Tavily and ask Gemini what news drove the day.
   5. Ask Gemini to act as a swing trader and give a view for tomorrow.
-  6. Ask Gemini for the upcoming economic calendar.
+  6. Search the web via Tavily and ask Gemini for the upcoming economic
+     calendar.
   7. Save everything into Supabase.
 
 Run it by hand with:      python main.py
@@ -30,6 +31,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 import pandas as pd
+import requests
 
 # ======================================================================
 # CONFIGURATION - change tickers here if you want more or fewer
@@ -488,6 +490,40 @@ class Gemini:
             pass
 
 
+def tavily_search(api_key: str, query: str, max_results: int = 6,
+                   days: int | None = None) -> list[dict]:
+    """
+    Real web search via Tavily, used to ground Gemini in place of Google
+    Search grounding (which needs billing enabled on this account). We
+    fetch real results ourselves and hand them to Gemini's plain text
+    generation as context, instead of using Gemini's built-in search tool.
+    """
+    body: dict[str, Any] = {
+        "api_key": api_key,
+        "query": query,
+        "search_depth": "basic",
+        "max_results": max_results,
+    }
+    if days:
+        body["days"] = days
+    resp = requests.post("https://api.tavily.com/search", json=body, timeout=20)
+    resp.raise_for_status()
+    return resp.json().get("results", []) or []
+
+
+def format_search_results(results: list[dict]) -> str:
+    """Turn Tavily results into a plain-text block to feed the model."""
+    if not results:
+        return "(no search results available)"
+    lines = []
+    for r in results:
+        title = str(r.get("title", "")).strip()
+        url = str(r.get("url", "")).strip()
+        content = str(r.get("content", "") or "").strip()[:500]
+        lines.append(f"- TITLE: {title}\n  URL: {url}\n  CONTENT: {content}")
+    return "\n".join(lines)
+
+
 def extract_json(text: str) -> Any:
     """
     Pull a JSON object or list out of the model's reply.
@@ -544,46 +580,90 @@ def build_market_table(rows: list[dict]) -> str:
     return "\n".join(lines)
 
 
-def get_news(g: Gemini, trade_date: str, rows: list[dict]) -> dict:
+def get_news(g: Gemini, trade_date: str, rows: list[dict],
+             tavily_key: str | None) -> dict:
     """
-    Gemini call 1: a data-driven read of today's session.
+    Gemini call 1: what actually moved the market today.
 
-    Google Search grounding is disabled on this account (it needs billing
-    enabled, separate from the base free text quota), so this deliberately
-    does NOT claim to know today's actual headlines - the model has no way
-    to verify real news without search, and asserting specific stories would
-    violate the whole point of "no invented news". Instead it explains the
-    session using only the price/sector numbers we already computed.
+    Google Search grounding needs billing enabled on this account (separate
+    from the base free text quota), which isn't set up. Instead of dropping
+    real news entirely, we fetch real results ourselves via Tavily (free,
+    no billing) and hand them to Gemini as context - it is instructed to
+    only use what's actually in the search results, never invent stories.
     """
-    table = build_market_table(rows)
-    prompt = f"""You are a markets analyst. Today is {trade_date} (US market date).
+    qqq = next((r for r in rows if r["symbol"] == BENCHMARK), {})
 
-Here is today's closing price and sector data:
-{table}
+    search_context = "(no live search configured - TAVILY_API_KEY not set)"
+    if tavily_key:
+        try:
+            results = tavily_search(
+                tavily_key,
+                f"US stock market news today {trade_date} Nasdaq Fed inflation jobs",
+                max_results=6, days=2,
+            )
+            search_context = format_search_results(results)
+        except Exception as exc:                      # noqa: BLE001
+            log(f"  ! Tavily search failed: {exc!r}")
+            search_context = "(search failed, see logs)"
 
-Write 2 to 4 sentences in plain English explaining what this price action
-and sector rotation likely reflects, using ONLY the numbers above.
+    prompt = f"""You are a financial news editor. Today is {trade_date} (US market date).
+The Nasdaq 100 ETF (QQQ) closed at {qqq.get('close')}, a move of {qqq.get('change_pct')}%.
+
+Here are real, current web search results about today's market:
+{search_context}
+
+Using ONLY the search results above, write a market summary. Never invent
+a headline, source, or URL that is not actually present above.
+
+Return ONLY valid JSON in exactly this shape, no other text:
+{{
+  "summary": "2 to 4 sentences in plain English explaining what drove US equities today, based on the search results above.",
+  "headlines": [
+    {{"title": "...", "summary": "one sentence", "source": "publication name", "url": "https://..."}}
+  ]
+}}
 
 Rules:
-- Do not name specific news stories, headlines, or events - you cannot verify
-  what actually happened today, so do not claim to know it.
-- Describe it in terms of the data only ("tech-heavy names underperformed
-  while defensive sectors led" rather than "the Fed said X").
-- Simple, clear language, no jargon without explanation.
-- Return ONLY the plain text summary, no JSON, no preamble."""
+- Give between 3 and 6 headlines. Copy the title and URL exactly from the
+  search results above - do not paraphrase URLs or invent ones.
+- If the search results do not clearly describe today's market drivers,
+  say so plainly in the summary and return an empty headlines list, rather
+  than guessing.
+- Prefer macro drivers (Fed, inflation, jobs, rates, oil, big tech earnings)
+  over single small-cap stock stories.
+- Use simple, clear language. No jargon without explanation."""
 
     raw = g.ask(prompt, search=False)
-    return {"summary": raw.strip(), "headlines": []}
+    data = extract_json(raw) or {}
+    if not isinstance(data, dict):
+        data = {}
+    return {
+        "summary": str(data.get("summary") or "").strip(),
+        "headlines": data.get("headlines") if isinstance(data.get("headlines"), list) else [],
+    }
 
 
 def get_outlook(g: Gemini, trade_date: str, rows: list[dict],
-                news: dict, leaders: list[str]) -> dict:
+                news: dict, leaders: list[str], tavily_key: str | None) -> dict:
     """Gemini call 2: the swing trader's read and tomorrow's outlook."""
     table = build_market_table(rows)
     headline_text = "\n".join(
         f"- {h.get('title','')}: {h.get('summary','')}"
         for h in news.get("headlines", [])[:6]
     ) or "(no headlines available)"
+
+    search_context = "(no live search configured - TAVILY_API_KEY not set)"
+    if tavily_key:
+        try:
+            results = tavily_search(
+                tavily_key,
+                f"US economic calendar earnings releases scheduled after {trade_date}",
+                max_results=5, days=3,
+            )
+            search_context = format_search_results(results)
+        except Exception as exc:                      # noqa: BLE001
+            log(f"  ! Tavily search failed: {exc!r}")
+            search_context = "(search failed, see logs)"
 
     prompt = f"""You are a professional swing trader with 15 years of experience
 trading the Nasdaq 100 and US sector ETFs. Today is {trade_date}.
@@ -596,26 +676,30 @@ the index today.
 
 Today's strongest sectors by relative strength: {', '.join(leaders) or 'n/a'}
 
-Today's data-driven context:
+Today's news drivers:
 {headline_text}
 
-Give your professional read based purely on the price/technical data above.
-You do not have live web access, so do not claim to know about specific
-scheduled events, earnings dates, or news - describe the technical setup
-and general risk factors only.
+Real search results about scheduled US economic releases/earnings in the
+next session:
+{search_context}
+
+Give your professional read.
 
 Return ONLY valid JSON in exactly this shape, no other text:
 {{
   "technical": "3 to 5 sentences. Where is QQQ relative to its EMA 9, 20, 50 and 200? Is the short EMA above or below the long EMA, and what does that say about trend? Comment on the sector rotation you see in the RS numbers.",
-  "outlook": "3 to 5 sentences. Your view for the next session, and what would confirm or invalidate it, based on the technical setup only.",
+  "outlook": "3 to 5 sentences. Your view for the next session, and what would confirm or invalidate it.",
   "bias": "bullish or neutral or bearish",
   "levels": {{"support": [numbers], "resistance": [numbers]}},
-  "risks": ["short risk one", "short risk two", "short risk three"]
+  "risks": ["short risk one", "short risk two", "short risk three"],
+  "next_session_events": ["event name and time, ONLY if explicitly present in the search results above"]
 }}
 
 Rules:
 - Write in simple, clear English. Explain any term you use.
 - Be specific about price levels, taken from the EMA values above.
+- Only list a next_session_events entry if it is explicitly supported by
+  the search results above - never guess a date or event.
 - Do not give financial advice or tell anyone to buy or sell. Describe
   the setup and the scenarios only.
 - If the data does not support a strong view, say "neutral"."""
@@ -640,13 +724,32 @@ Rules:
     }
 
 
-def get_calendar(g: Gemini, trade_date: str) -> list[dict]:
+def get_calendar(g: Gemini, trade_date: str, tavily_key: str | None) -> list[dict]:
     """Gemini call 3: the rolling economic calendar for the next 10 days."""
     start = date.fromisoformat(trade_date)
     end = start + timedelta(days=10)
 
-    prompt = f"""Search the web for the official US economic calendar between
-{start.isoformat()} and {end.isoformat()}.
+    if not tavily_key:
+        log("  ! TAVILY_API_KEY not set, skipping calendar (would have to guess dates)")
+        return []
+
+    try:
+        results = tavily_search(
+            tavily_key,
+            f"US economic calendar CPI FOMC jobs report schedule "
+            f"{start.isoformat()} to {end.isoformat()}",
+            max_results=6, days=7,
+        )
+    except Exception as exc:                          # noqa: BLE001
+        log(f"  ! Tavily search failed: {exc!r}")
+        return []
+
+    search_context = format_search_results(results)
+
+    prompt = f"""Using ONLY the real search results below, extract the official
+US economic calendar between {start.isoformat()} and {end.isoformat()}.
+
+{search_context}
 
 Return ONLY valid JSON, a list, in exactly this shape, no other text:
 [
@@ -655,14 +758,17 @@ Return ONLY valid JSON, a list, in exactly this shape, no other text:
 ]
 
 Rules:
+- Only include an event if the search results above explicitly give it a
+  date in the range. If you cannot find a real date for an event, skip it
+  entirely rather than guessing one.
 - Only genuine, scheduled US releases and events: CPI, PPI, PCE, FOMC
   meetings and minutes, Fed speakers, non-farm payrolls, jobless claims,
   retail sales, ISM, GDP, consumer confidence, Treasury auctions.
 - importance must be exactly "high", "medium" or "low".
 - Use "" for forecast or previous if you do not know them. Do not guess.
-- Between 5 and 15 events. Most important first."""
+- If nothing in the search results has a clear date, return an empty list."""
 
-    raw = g.ask(prompt, search=True)
+    raw = g.ask(prompt, search=False)
     data = extract_json(raw)
     if not isinstance(data, list):
         return []
@@ -818,14 +924,15 @@ def main() -> int:
         model_used = g.model
         log(f"Using Gemini model: {g.model}")
 
-        # "calendar" (get_calendar) is intentionally not called here: without
-        # Google Search grounding, the model has no way to know real
-        # scheduled event dates (CPI, FOMC, etc.), and presenting guessed
-        # dates as a real calendar would be actively misleading rather than
-        # just lower quality. Re-enable it if grounding is turned back on.
+        # Google Search grounding needs billing on this account, so real
+        # news/calendar data comes from Tavily search instead (see
+        # tavily_search()). Without a TAVILY_API_KEY, these calls still run
+        # but explicitly say they have no live data rather than guessing.
+        tavily_key = os.environ.get("TAVILY_API_KEY")
         for label, fn in (
-            ("news",     lambda: get_news(g, trade_date, rows)),
-            ("outlook",  lambda: get_outlook(g, trade_date, rows, news, leaders)),
+            ("news",     lambda: get_news(g, trade_date, rows, tavily_key)),
+            ("outlook",  lambda: get_outlook(g, trade_date, rows, news, leaders, tavily_key)),
+            ("calendar", lambda: get_calendar(g, trade_date, tavily_key)),
         ):
             try:
                 log(f"Gemini: {label} ...")

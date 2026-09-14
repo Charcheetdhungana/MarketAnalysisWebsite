@@ -2,4 +2,5 @@ yfinance==1.7.0
 pandas>=2.2
 supabase>=2.15
 google-genai>=2.23
+requests>=2.31
 tzdata
