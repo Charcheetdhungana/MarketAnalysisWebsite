@@ -5,6 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Nasdaq 100 Market Dashboard</title>
 <meta name="description" content="Daily QQQ and sector ETF dashboard with EMAs, relative strength and an AI market outlook.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Ubuntu:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
 /* ===================================================================
    DESIGN TOKENS
@@ -68,7 +71,7 @@
 html,body{margin:0;padding:0}
 body{
   background:var(--page); color:var(--ink);
-  font:15px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif;
+  font:15px/1.55 "Ubuntu",system-ui,-apple-system,"Segoe UI",sans-serif;
   -webkit-font-smoothing:antialiased;
 }
 .wrap{max-width:1180px;margin:0 auto;padding:20px 16px 64px}
@@ -284,7 +287,6 @@ footer{
       <p class="sub" id="subtitle">Loading&hellip;</p>
     </div>
     <div class="toolbar">
-      <button class="ghost" id="tableToggle" aria-pressed="false">Table view</button>
       <button class="ghost" id="themeToggle" title="Switch light / dark">Theme</button>
     </div>
   </header>
@@ -337,8 +339,6 @@ footer{
     <div class="card">
       <h3>QQQ &mdash; price vs exponential moving averages</h3>
       <div id="emaChart"></div>
-      <div class="tbl-scroll" style="margin-top:16px"><div class="scroller"><table id="emaTable"></table></div></div>
-      <p class="scrollhint">Scroll the table sideways to see every column.</p>
     </div>
 
     <div class="card" style="margin-top:14px">
@@ -534,7 +534,7 @@ function lineChart(mount, series) {
     }));
     const t = mk("text", {
       x:M.l+iw+8, y:y+4, fill:"var(--ink-muted)", "font-size":11,
-      "font-family":"system-ui,sans-serif"
+      "font-family":"Ubuntu,system-ui,sans-serif"
     });
     t.textContent = v.toFixed(1);
     svg.appendChild(t);
@@ -544,7 +544,7 @@ function lineChart(mount, series) {
   [0, Math.floor((n - 1) / 2), n - 1].forEach((i, k) => {
     const t = mk("text", {
       x:X(i), y:H-6, fill:"var(--ink-muted)", "font-size":11,
-      "font-family":"system-ui,sans-serif",
+      "font-family":"Ubuntu,system-ui,sans-serif",
       "text-anchor": k === 0 ? "start" : k === 1 ? "middle" : "end"
     });
     t.textContent = fmtDate(series.dates[i], { day:"numeric", month:"short" });
@@ -797,42 +797,6 @@ function renderEma() {
   } else {
     lineChart($("emaChart"), qqqSeries);
   }
-
-  const r = STATE.prices.find(p => p.symbol === "QQQ");
-  const t = $("emaTable");
-  const emaHeaders = EMA_KEYS.map(e => `<th>${e.label}</th>`).join("");
-  t.innerHTML = `<thead><tr>
-    <th>Symbol</th><th>Close</th>${emaHeaders}<th>Stack</th>
-  </tr></thead>`;
-  const tb = el("tbody");
-
-  if (r) {
-    const tr = el("tr");
-    tr.appendChild(el("td", null, `${r.symbol} · ${r.name || ""}`));
-    tr.appendChild(el("td", null, num(r.close)));
-    EMA_KEYS.forEach(e => {
-      const td = el("td", null, num(r[e.k]));
-      if (r[e.k] != null && r.close != null) {
-        td.className = +r.close >= +r[e.k] ? "up" : "down";
-      }
-      tr.appendChild(td);
-    });
-
-    // "Stack" = are the EMAs lined up shortest-above-longest?
-    // That is the classic healthy uptrend shape.
-    const td = el("td");
-    const v = EMA_KEYS.map(e => r[e.k]);
-    if (v.every(x => x != null)) {
-      const bull = v[0] > v[1] && v[1] > v[2] && v[2] > v[3] && v[3] > v[4];
-      const bear = v[0] < v[1] && v[1] < v[2] && v[2] < v[3] && v[3] < v[4];
-      const label = bull ? "▲ Bullish" : bear ? "▼ Bearish" : "Mixed";
-      const s = el("span", `sig ${bull ? "up" : bear ? "down" : "flat"}`, label);
-      td.appendChild(s);
-    } else { td.textContent = "–"; }
-    tr.appendChild(td);
-    tb.appendChild(tr);
-  }
-  t.appendChild(tb);
 }
 
 function nextSessionDate(iso) {
@@ -988,13 +952,6 @@ $("themeToggle").onclick = () => {
   document.documentElement.setAttribute("data-theme", dark ? "light" : "dark");
   // redraw so the SVG picks up the new variables
   if (!$("app").hidden) { renderEma(); markOverflow(); }
-};
-
-/* ---- table view: hide the charts, keep the numbers ---- */
-$("tableToggle").onclick = (e) => {
-  const on = e.target.getAttribute("aria-pressed") !== "true";
-  e.target.setAttribute("aria-pressed", String(on));
-  $("emaChart").hidden = on;
 };
 
 load();
