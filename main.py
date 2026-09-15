@@ -549,10 +549,22 @@ def marketaux_search(api_key: str, symbols: str | None = None,
     anything news-shaped. `search` is still available for the rare case
     that needs a keyword rather than a ticker (e.g. economic calendar
     terms), understanding recall will be weak.
+
+    Two things confirmed by direct testing, not documented anywhere:
+    - `published_before` returns ZERO results on this tier even alone,
+      regardless of any other params - a closed historical date range
+      is apparently not available on the free plan, only "since X". Do
+      not add it.
+    - When `symbols` is set, sorting by "entity_match_score" surfaces
+      articles substantively about those tickers; the default
+      "published_desc" just returns whatever is technically newest
+      across any of them, which drifts toward tangential mentions
+      (a dividend-raise roundup, an unrelated earnings note) rather
+      than the actual story connecting them.
     """
     params: dict[str, Any] = {
         "api_token": api_key, "language": "en", "limit": limit,
-        "sort": "published_desc",
+        "sort": "entity_match_score" if symbols else "published_desc",
     }
     if symbols:
         params["symbols"] = symbols
