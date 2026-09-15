@@ -8,7 +8,7 @@
 -- ---------------------------------------------------------------------
 -- TABLE 1: daily_prices
 -- One row per ticker per trading day.
--- Example: on 2026-09-14 there will be 13 rows (QQQ, NQ=F, 11 sectors).
+-- Example: on 2026-09-14 there will be 12 rows (QQQ, 11 sectors).
 -- ---------------------------------------------------------------------
 create table if not exists public.daily_prices (
     id            bigint generated always as identity primary key,
@@ -25,9 +25,10 @@ create table if not exists public.daily_prices (
     rs_rank       int,                       -- 1 = strongest sector that day
     volume        bigint,
 
-    ema9          numeric(14,4),
-    ema20         numeric(14,4),
+    ema8          numeric(14,4),
+    ema21         numeric(14,4),
     ema50         numeric(14,4),
+    ema100        numeric(14,4),
     ema200        numeric(14,4),
 
     created_at    timestamptz default now(),

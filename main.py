@@ -4,7 +4,7 @@ QQQ Market Dashboard - daily automation script.
 
 What this file does, in order:
   1. Work out whether the US market actually closed today.
-  2. Download 2 years of daily prices for QQQ, NQ futures and 11 sector ETFs.
+  2. Download 2 years of daily prices for QQQ and 11 sector ETFs.
   3. Work out the day's change, the EMAs (9/20/50/200) and Relative Strength.
   4. Search the web via Tavily and ask Gemini what news drove the day.
   5. Ask Gemini to act as a swing trader and give a view for tomorrow.
@@ -43,7 +43,6 @@ BENCHMARK = "QQQ"
 
 INSTRUMENTS: dict[str, dict[str, str]] = {
     "QQQ":  {"name": "Invesco QQQ Trust",        "asset_class": "index"},
-    "NQ=F": {"name": "Nasdaq 100 Futures",       "asset_class": "futures"},
     "XLK":  {"name": "Technology",               "asset_class": "sector"},
     "XLF":  {"name": "Financials",               "asset_class": "sector"},
     "XLY":  {"name": "Consumer Discretionary",   "asset_class": "sector"},
@@ -57,7 +56,7 @@ INSTRUMENTS: dict[str, dict[str, str]] = {
     "XLC":  {"name": "Communication Services",   "asset_class": "sector"},
 }
 
-EMA_SPANS = (9, 20, 50, 200)
+EMA_SPANS = (8, 21, 50, 100, 200)
 
 # 2 years of daily bars. EMA 200 needs roughly 200 trading days of history
 # before it means anything, and 2 years gives about 500. Plenty.
@@ -186,7 +185,7 @@ def build_rows(closes: dict[str, pd.Series],
             if len(v):
                 vol = int(v.iloc[-1])
 
-        rows.append({
+        row = {
             "trade_date":  index_date(s),
             "symbol":      symbol,
             "name":        meta.get("name", symbol),
@@ -196,11 +195,10 @@ def build_rows(closes: dict[str, pd.Series],
             "change":      round_or_none(change),
             "change_pct":  round_or_none(change_pct),
             "volume":      vol,
-            "ema9":        round_or_none(ema(s, 9)),
-            "ema20":       round_or_none(ema(s, 20)),
-            "ema50":       round_or_none(ema(s, 50)),
-            "ema200":      round_or_none(ema(s, 200)),
-        })
+        }
+        for span in EMA_SPANS:
+            row[f"ema{span}"] = round_or_none(ema(s, span))
+        rows.append(row)
 
     return rows
 
@@ -250,12 +248,15 @@ def top_sectors(rows: list[dict], n: int = 3) -> list[str]:
 
 def build_chart_series(closes: dict[str, pd.Series],
                        symbols: list[str],
-                       lookback: int = CHART_LOOKBACK) -> dict:
+                       lookback: int = CHART_LOOKBACK,
+                       ohlc: dict[str, pd.DataFrame] | None = None) -> dict:
     """
     Pack the last ~90 sessions of price + EMA lines into plain JSON so the
     website can draw charts on day one, before the database has built up
-    its own history.
+    its own history. Symbols present in `ohlc` also get open/high/low
+    arrays, for candlestick charts (only QQQ uses this today).
     """
+    ohlc = ohlc or {}
     out: dict[str, dict] = {}
     for sym in symbols:
         s = pd.to_numeric(closes.get(sym, pd.Series(dtype=float)),
@@ -273,6 +274,14 @@ def build_chart_series(closes: dict[str, pd.Series],
             seg = line.reindex(tail.index)
             out[sym][key] = [None if pd.isna(v) else round(float(v), 4)
                              for v in seg.values]
+
+        frame = ohlc.get(sym)
+        if frame is not None and not frame.empty:
+            frame_tail = frame.reindex(tail.index)
+            for col, key in (("Open", "open"), ("High", "high"), ("Low", "low")):
+                seg = frame_tail[col]
+                out[sym][key] = [None if pd.isna(v) else round(float(v), 4)
+                                 for v in seg.values]
     return out
 
 
@@ -281,11 +290,15 @@ def build_chart_series(closes: dict[str, pd.Series],
 # ======================================================================
 
 def fetch_history(symbols: list[str], period: str = HISTORY_PERIOD
-                  ) -> tuple[dict[str, pd.Series], dict[str, pd.Series]]:
+                  ) -> tuple[dict[str, pd.Series], dict[str, pd.Series],
+                             dict[str, pd.DataFrame]]:
     """
     Download daily bars from Yahoo Finance via yfinance.
 
-    Returns two dictionaries: closing prices and volumes, keyed by ticker.
+    Returns three dictionaries, all keyed by ticker: closing prices,
+    volumes, and full OHLC frames (Open/High/Low/Close) for candlestick
+    charts. Most callers only need the close prices; OHLC is only used for
+    QQQ's technical chart on the front end.
 
     NOTE: yfinance is an unofficial library. It reads Yahoo's public
     website. It is free and normally reliable, but Yahoo can change things
@@ -324,6 +337,7 @@ def fetch_history(symbols: list[str], period: str = HISTORY_PERIOD
 
     closes: dict[str, pd.Series] = {}
     volumes: dict[str, pd.Series] = {}
+    ohlc: dict[str, pd.DataFrame] = {}
 
     if isinstance(df.columns, pd.MultiIndex):
         # Shape is (Price, Ticker) e.g. ('Close', 'QQQ')
@@ -337,18 +351,25 @@ def fetch_history(symbols: list[str], period: str = HISTORY_PERIOD
                 volumes[sym] = df[("Volume", sym)].dropna()
             except KeyError:
                 pass
+            try:
+                ohlc[sym] = df.xs(sym, axis=1, level=1)[
+                    ["Open", "High", "Low", "Close"]].dropna()
+            except KeyError:
+                pass
     else:
         # Only happens when a single ticker is requested
         sym = symbols[0]
         closes[sym] = df["Close"].dropna()
         if "Volume" in df:
             volumes[sym] = df["Volume"].dropna()
+        if {"Open", "High", "Low", "Close"} <= set(df.columns):
+            ohlc[sym] = df[["Open", "High", "Low", "Close"]].dropna()
 
     for sym, s in closes.items():
         log(f"  {sym:5s} {len(s):4d} bars, last {s.index[-1].date()} "
             f"@ {float(s.iloc[-1]):.2f}")
 
-    return closes, volumes
+    return closes, volumes, ohlc
 
 
 def market_closed_today(closes: dict[str, pd.Series], force: bool) -> bool:
@@ -566,17 +587,19 @@ def extract_json(text: str) -> Any:
 
 def build_market_table(rows: list[dict]) -> str:
     """A compact plain-text table to feed the model. Cheaper than JSON."""
-    lines = ["SYMBOL | NAME | CLOSE | CHG% | RS_vs_QQQ | EMA9 | EMA20 | EMA50 | EMA200"]
+    ema_cols = [f"ema{span}" for span in EMA_SPANS]
+    header = ["SYMBOL", "NAME", "CLOSE", "CHG%", "RS_vs_QQQ"] + \
+             [f"EMA{span}" for span in EMA_SPANS]
+    lines = [" | ".join(header)]
     order = {"index": 0, "futures": 1, "sector": 2}
     for r in sorted(rows, key=lambda r: (order.get(r["asset_class"], 3),
                                          r.get("rs_rank") or 0)):
         def f(key, nd=2):
             v = r.get(key)
             return "n/a" if v is None else f"{float(v):.{nd}f}"
-        lines.append(
-            f"{r['symbol']} | {r['name']} | {f('close')} | {f('change_pct')} | "
-            f"{f('rs_vs_qqq')} | {f('ema9')} | {f('ema20')} | {f('ema50')} | {f('ema200')}"
-        )
+        cells = [r['symbol'], r['name'], f('close'), f('change_pct'), f('rs_vs_qqq')]
+        cells += [f(col) for col in ema_cols]
+        lines.append(" | ".join(cells))
     return "\n".join(lines)
 
 
@@ -873,7 +896,7 @@ def main() -> int:
 
     # ---- Step 1: prices -------------------------------------------------
     symbols = list(INSTRUMENTS.keys())
-    closes, volumes = fetch_history(symbols)
+    closes, volumes, ohlc = fetch_history(symbols)
 
     if not market_closed_today(closes, args.force):
         log("Nothing to do. Exiting cleanly.")
@@ -893,8 +916,9 @@ def main() -> int:
     log(f"QQQ close {qqq.get('close')} ({qqq.get('change_pct')}%)")
     log(f"Strongest sectors: {', '.join(leaders)}")
 
-    chart_symbols = [BENCHMARK] + leaders
-    chart = build_chart_series(closes, chart_symbols)
+    # Only QQQ gets a technical chart on the front end now, so that is the
+    # only symbol worth packing chart data (and OHLC, for candles) for.
+    chart = build_chart_series(closes, [BENCHMARK], ohlc=ohlc)
 
     # ---- Step 2: connect to the database early, so we can check whether
     #      today's report was already written by the earlier scheduled run.

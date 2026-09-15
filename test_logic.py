@@ -105,7 +105,6 @@ closes = {
     "QQQ":  pd.Series(path, index=idx),
     "XLK":  pd.Series(path * 1.02, index=idx),
     "XLU":  pd.Series(path * 0.98, index=idx),
-    "NQ=F": pd.Series(path * 41.0, index=idx),
 }
 # Force known final moves so the arithmetic is checkable by hand.
 closes["QQQ"].iloc[-2] = 400.0; closes["QQQ"].iloc[-1] = 404.0   # +1.00%
@@ -115,7 +114,7 @@ closes["XLU"].iloc[-2] = 80.0;  closes["XLU"].iloc[-1] = 79.6    # -0.50%
 rows = main.build_rows(closes)
 by = {r["symbol"]: r for r in rows}
 
-check("one row per ticker", len(rows) == 4, f"got {len(rows)}")
+check("one row per ticker", len(rows) == 3, f"got {len(rows)}")
 check("QQQ change == 4.0", approx(by["QQQ"]["change"], 4.0))
 check("QQQ change_pct == 1.00", approx(by["QQQ"]["change_pct"], 1.0))
 check("XLK change_pct == 1.50", approx(by["XLK"]["change_pct"], 1.5))
@@ -125,10 +124,9 @@ check("trade_date is the last bar's date",
       by["QQQ"]["trade_date"])
 check("asset_class comes from the config",
       by["QQQ"]["asset_class"] == "index"
-      and by["NQ=F"]["asset_class"] == "futures"
       and by["XLK"]["asset_class"] == "sector")
-check("all four EMAs are populated",
-      all(by["QQQ"][k] is not None for k in ("ema9", "ema20", "ema50", "ema200")))
+check("all five EMAs are populated",
+      all(by["QQQ"][f"ema{span}"] is not None for span in main.EMA_SPANS))
 
 short = {"QQQ": pd.Series([1.0], index=idx[:1])}
 check("a ticker with one bar is skipped, not crashed",
@@ -149,8 +147,7 @@ check("QQQ relative strength against itself is 0",
       approx(by["QQQ"]["rs_vs_qqq"], 0.0))
 check("rank 1 goes to the strongest sector", by["XLK"]["rs_rank"] == 1)
 check("the weaker sector ranks below it", by["XLU"]["rs_rank"] == 2)
-check("non-sectors are not ranked",
-      by["QQQ"]["rs_rank"] is None and by["NQ=F"]["rs_rank"] is None)
+check("non-sectors are not ranked", by["QQQ"]["rs_rank"] is None)
 check("top_sectors returns strongest first",
       main.top_sectors(rows, 3) == ["XLK", "XLU"])
 
@@ -181,7 +178,8 @@ q = chart["QQQ"]
 check("chart has QQQ and XLK", set(chart) == {"QQQ", "XLK"})
 check("90 dates returned", len(q["dates"]) == 90, str(len(q["dates"])))
 check("every line has the same length as dates",
-      all(len(q[k]) == 90 for k in ("close", "ema9", "ema20", "ema50", "ema200")))
+      all(len(q[k]) == 90 for k in
+          ["close"] + [f"ema{span}" for span in main.EMA_SPANS]))
 check("the last EMA200 in the chart equals the stored EMA200",
       approx(q["ema200"][-1], by["QQQ"]["ema200"], 1e-4),
       f"{q['ema200'][-1]} vs {by['QQQ']['ema200']}")

@@ -15,18 +15,18 @@ GitHub Actions          Python (main.py)         Supabase            Vercel
 
 ## What it shows
 
-**Section A - Daily Market Summary**
-QQQ and Nasdaq futures closes, all 11 sector SPDR ETFs ranked by relative
-strength, and an AI-written summary of the macro news that drove the session,
-with real source links.
+**Main Index**
+QQQ's price with daily / weekly / monthly P&amp;L (properly compounded, not
+added), all 11 sector SPDR ETFs ranked by relative strength, and an
+AI-written summary of the macro news that drove the session, with real
+source links via Tavily search.
 
-**Section B - Technicals and Outlook**
-EMA 9 / 20 / 50 / 200 for QQQ and the three strongest sectors, charted and
-tabled, plus a swing-trader read of the setup and a view for the next session.
+**Technicals**
+EMA 8 / 21 / 50 / 100 / 200 for QQQ, charted as candlesticks, plus a
+swing-trader read of the setup and a view for the next session.
 
-**Section C - This Week and Calendar**
-Week-to-date performance for every ticker, properly compounded, and a rolling
-calendar of upcoming market-moving events.
+**Calendar**
+A rolling calendar of upcoming market-moving events.
 
 ---
 
