@@ -8,8 +8,8 @@
 -- ---------------------------------------------------------------------
 -- TABLE 1: daily_prices
 -- One row per ticker per trading day.
--- Example: on 2026-09-14 there will be 21 rows (QQQ, 11 sectors,
--- 9 individual big-name stocks).
+-- Example: on 2026-09-14 there will be 27 rows (QQQ, 11 sectors,
+-- 15 individual big-name stocks).
 -- ---------------------------------------------------------------------
 create table if not exists public.daily_prices (
     id            bigint generated always as identity primary key,

@@ -147,8 +147,10 @@ h3.big{font-size:33px;font-weight:700;letter-spacing:-.015em;margin:0 0 16px}
 .up{color:var(--up-text)} .down{color:var(--down)} .flat{color:var(--ink-muted)}
 
 /* ---------- big-name stock panel (Tech / Software / Chips & Memory) ---------- */
-.bigNames{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
-@media (max-width:760px){.bigNames{grid-template-columns:1fr}}
+.bigNames{display:grid;grid-template-columns:repeat(5,1fr);gap:20px}
+@media (max-width:1200px){.bigNames{grid-template-columns:repeat(3,1fr)}}
+@media (max-width:760px){.bigNames{grid-template-columns:repeat(2,1fr)}}
+@media (max-width:480px){.bigNames{grid-template-columns:1fr}}
 .bigGroup h4{
   font-size:11px;font-weight:650;letter-spacing:.08em;text-transform:uppercase;
   color:var(--ink-muted);margin:0 0 12px;
@@ -765,7 +767,7 @@ function renderMainIndex() {
   });
 }
 
-const STOCK_GROUP_ORDER = ["Tech", "Software", "Chips & Memory"];
+const STOCK_GROUP_ORDER = ["Tech", "Software", "Chips & Memory", "Health", "Crypto"];
 
 function renderBigNames() {
   const stocks = STATE.prices.filter(p => p.asset_class === "stock");

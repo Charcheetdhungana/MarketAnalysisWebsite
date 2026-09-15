@@ -67,6 +67,12 @@ INSTRUMENTS: dict[str, dict[str, str]] = {
     "NVDA":  {"name": "Nvidia",      "asset_class": "stock", "stock_group": "Chips & Memory"},
     "AMD":   {"name": "AMD",         "asset_class": "stock", "stock_group": "Chips & Memory"},
     "MU":    {"name": "Micron",      "asset_class": "stock", "stock_group": "Chips & Memory"},
+    "UNH":   {"name": "UnitedHealth", "asset_class": "stock", "stock_group": "Health"},
+    "LLY":   {"name": "Eli Lilly",    "asset_class": "stock", "stock_group": "Health"},
+    "JNJ":   {"name": "Johnson & Johnson", "asset_class": "stock", "stock_group": "Health"},
+    "COIN":  {"name": "Coinbase",     "asset_class": "stock", "stock_group": "Crypto"},
+    "MSTR":  {"name": "MicroStrategy", "asset_class": "stock", "stock_group": "Crypto"},
+    "MARA":  {"name": "Marathon Digital", "asset_class": "stock", "stock_group": "Crypto"},
 }
 
 EMA_SPANS = (8, 21, 50, 100, 200)
