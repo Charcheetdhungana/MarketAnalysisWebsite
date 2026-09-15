@@ -91,7 +91,7 @@ h1{
   to{opacity:1;transform:translateY(0)}
 }
 @media (prefers-reduced-motion:reduce){h1{animation:none}}
-@media (max-width:640px){h1{font-size:28px} h3.big{font-size:22px}}
+@media (max-width:640px){h1{font-size:28px} .headline{font-size:26px} h3{font-size:22px}}
 .sub{color:var(--ink-muted);font-size:13px;margin:2px 0 22px}
 .toolbar{display:flex;gap:8px;align-items:center}
 button.ghost{
@@ -108,17 +108,20 @@ h2{
   display:flex;align-items:center;gap:10px;
 }
 h2::after{content:"";flex:1;height:1px;background:var(--grid)}
-h3{font-size:14px;font-weight:620;margin:0 0 10px}
-/* A card title introducing content that itself carries large text (like
-   article headlines) needs to outrank that content visually - otherwise
-   the section label reads smaller than its own children, which is the
-   inconsistency to avoid. 6-8px under the page h1. */
-h3.big{font-size:33px;font-weight:700;letter-spacing:-.015em;margin:0 0 16px}
+/* EVERY card title is this one size, full stop - Market Summary, What
+   drove the market today, the QQQ chart title, Outlook, Top Stocks,
+   Upcoming events, all of it. The earlier version singled out one
+   heading as "big" and left its structural siblings small, which
+   recreated the exact inconsistency it was meant to fix, just moved
+   to a different pair of headings. One rule, applied everywhere the
+   role is the same, is the only way this stays consistent as more
+   sections get added later. 6-8px under the page h1. */
+h3{font-size:33px;font-weight:700;letter-spacing:-.015em;margin:0 0 16px}
 
 /* ---------- big section headlines (Main Index / Sector Performance) ---------- */
 .headline{
-  font-size:19px;font-weight:700;letter-spacing:-.01em;
-  margin:40px 0 14px;color:var(--ink);
+  font-size:38px;font-weight:700;letter-spacing:-.015em;
+  margin:44px 0 16px;color:var(--ink);
 }
 .headline:first-of-type{margin-top:8px}
 .subhead{
@@ -361,7 +364,7 @@ footer{
     </div>
 
     <div class="card" style="margin-top:14px">
-      <h3 class="big">What drove the market today</h3>
+      <h3>What drove the market today</h3>
       <ul class="news big" id="headlines"></ul>
       <p class="muted" id="sourceLine" style="margin-top:14px"></p>
     </div>
