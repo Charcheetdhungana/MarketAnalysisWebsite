@@ -75,6 +75,15 @@ body{
   -webkit-font-smoothing:antialiased;
 }
 .wrap{max-width:1760px;margin:0 auto;padding:20px 32px 64px}
+
+/* ---------- page layout: sidebar + main column ---------- */
+.pageBody{display:flex;align-items:flex-start;gap:24px}
+.sidebar{width:360px;flex:none}
+.mainCol{flex:1;min-width:0}
+@media (max-width:900px){
+  .pageBody{flex-direction:column}
+  .sidebar{width:100%}
+}
 a{color:inherit}
 
 /* ---------- header ---------- */
@@ -153,10 +162,11 @@ h3{font-size:33px;font-weight:700;letter-spacing:-.015em;margin:0 0 16px}
 .up{color:var(--up-text)} .down{color:var(--down)} .flat{color:var(--ink-muted)}
 
 /* ---------- big-name stock panel (Tech / Software / Chips & Memory) ---------- */
-.bigNames{display:grid;grid-template-columns:repeat(5,1fr);gap:20px}
-@media (max-width:1200px){.bigNames{grid-template-columns:repeat(3,1fr)}}
-@media (max-width:760px){.bigNames{grid-template-columns:repeat(2,1fr)}}
-@media (max-width:480px){.bigNames{grid-template-columns:1fr}}
+/* The 5-column grid only makes sense at full page width - now that Top
+   Stocks lives in a fixed 360px sidebar, it stays a single column at
+   every viewport size, same as it was before this panel moved. */
+.bigNames{display:grid;grid-template-columns:1fr;gap:0}
+.bigGroup + .bigGroup{margin-top:18px;padding-top:16px;border-top:1px solid var(--grid)}
 /* Same tier as .hero .nm ("Invesco QQQ Trust") - a group label is
    structurally the same role as that subtitle, just reused here. */
 .bigGroup h4{font-size:29px;font-weight:600;color:var(--ink-2);margin:0 0 12px}
@@ -340,93 +350,98 @@ footer{
     <div class="skel" style="width:75%"></div><div class="skel" style="width:60%"></div></div>
   </div>
 
-  <main id="app" hidden>
+  <div id="app" class="pageBody" hidden>
 
-    <!-- ============ MAIN INDEX ============ -->
-    <h2 class="headline">Main Index</h2>
-    <div class="mainRow">
-      <div class="card" id="mainIndexCard">
-        <div class="hero">
-          <span class="sym">QQQ</span>
-          <span class="nm" id="mainName"></span>
-          <div class="px" id="mainPrice"></div>
-          <div class="dl" id="mainPnl"></div>
-          <div class="tabs" id="pnlTabs" role="tablist">
-            <button role="tab" aria-selected="true"  data-period="day">Daily</button>
-            <button role="tab" aria-selected="false" data-period="week">Weekly</button>
-            <button role="tab" aria-selected="false" data-period="month">Monthly</button>
+    <aside class="sidebar">
+      <div class="card">
+        <h3>Top Stocks</h3>
+        <div id="bigNamesCard"></div>
+      </div>
+
+      <div class="card" style="margin-top:14px">
+        <h3>Sectors</h3>
+        <p class="prose" style="margin:0 0 14px">
+          Relative strength is the sector&rsquo;s move minus QQQ&rsquo;s move,
+          with a signed value and arrow either way. Positive means money
+          flowed <em>into</em> that sector today.
+        </p>
+        <div class="tbl-scroll"><div class="scroller"><table id="sectorTable"></table></div></div>
+        <p class="scrollhint">Scroll the table sideways to see every column.</p>
+      </div>
+    </aside>
+
+    <main class="mainCol">
+
+      <!-- ============ MAIN INDEX ============ -->
+      <h2 class="headline">Main Index</h2>
+      <div class="mainRow">
+        <div class="card" id="mainIndexCard">
+          <div class="hero">
+            <span class="sym">QQQ</span>
+            <span class="nm" id="mainName"></span>
+            <div class="px" id="mainPrice"></div>
+            <div class="dl" id="mainPnl"></div>
+            <div class="tabs" id="pnlTabs" role="tablist">
+              <button role="tab" aria-selected="true"  data-period="day">Daily</button>
+              <button role="tab" aria-selected="false" data-period="week">Weekly</button>
+              <button role="tab" aria-selected="false" data-period="month">Monthly</button>
+            </div>
           </div>
+        </div>
+
+        <div class="card" id="marketSummaryCard">
+          <h3>Market Summary</h3>
+          <p class="prose" id="newsSummary"></p>
         </div>
       </div>
 
-      <div class="card" id="marketSummaryCard">
-        <h3>Market Summary</h3>
-        <p class="prose" id="newsSummary"></p>
+      <div class="card" style="margin-top:14px">
+        <h3>What drove the market today</h3>
+        <ul class="news big" id="headlines"></ul>
+        <p class="muted" id="sourceLine" style="margin-top:14px"></p>
       </div>
-    </div>
 
-    <div class="card" style="margin-top:14px">
-      <h3>What drove the market today</h3>
-      <ul class="news big" id="headlines"></ul>
-      <p class="muted" id="sourceLine" style="margin-top:14px"></p>
-    </div>
+      <!-- ============ TECHNICALS ============ -->
+      <h2 class="headline">Technicals</h2>
 
-    <div class="card" style="margin-top:14px">
-      <h3>Top Stocks</h3>
-      <div id="bigNamesCard"></div>
-    </div>
+      <div class="card">
+        <h3>QQQ &mdash; price vs exponential moving averages</h3>
+        <div id="emaChart"></div>
+      </div>
 
-    <!-- ============ SECTOR PERFORMANCE ============ -->
-    <h2 class="headline">Sector Performance &amp; Relative Strength</h2>
-    <div class="card">
-      <p class="prose" style="margin:0 0 14px">
-        Relative strength is the sector&rsquo;s move minus QQQ&rsquo;s move,
-        with a signed value and arrow either way. Positive means money
-        flowed <em>into</em> that sector today.
+      <div class="card" style="margin-top:14px">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px">
+          <h3 style="margin:0" id="outlookHeading">Outlook for next session</h3>
+          <span class="bias" id="bias"></span>
+        </div>
+        <p class="prose" id="aiOutlook"></p>
+        <div class="chips" id="levels"></div>
+        <div id="risksWrap" hidden>
+          <p class="muted" style="margin:14px 0 0;font-weight:600">What could go wrong</p>
+          <ul class="plain" id="risks"></ul>
+        </div>
+      </div>
+
+      <!-- ============ CALENDAR ============ -->
+      <div class="card" style="margin-top:14px">
+        <h3>Upcoming events</h3>
+        <ul class="cal" id="calendar"></ul>
+      </div>
+
+      <p class="disclaimer">
+        <strong>Not financial advice.</strong> The written outlook on this page is
+        produced by a language model reading a table of numbers and public news. It
+        can be wrong, and it does not know your situation. Prices come from Yahoo
+        Finance via the unofficial <code>yfinance</code> library and are not
+        guaranteed to be accurate. Do your own research.
       </p>
-      <div class="tbl-scroll"><div class="scroller"><table id="sectorTable"></table></div></div>
-      <p class="scrollhint">Scroll the table sideways to see every column.</p>
-    </div>
 
-    <!-- ============ TECHNICALS ============ -->
-    <h2 class="headline">Technicals</h2>
+      <footer>
+        <span id="footMeta"></span>
+      </footer>
+    </main>
 
-    <div class="card">
-      <h3>QQQ &mdash; price vs exponential moving averages</h3>
-      <div id="emaChart"></div>
-    </div>
-
-    <div class="card" style="margin-top:14px">
-      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px">
-        <h3 style="margin:0" id="outlookHeading">Outlook for next session</h3>
-        <span class="bias" id="bias"></span>
-      </div>
-      <p class="prose" id="aiOutlook"></p>
-      <div class="chips" id="levels"></div>
-      <div id="risksWrap" hidden>
-        <p class="muted" style="margin:14px 0 0;font-weight:600">What could go wrong</p>
-        <ul class="plain" id="risks"></ul>
-      </div>
-    </div>
-
-    <!-- ============ CALENDAR ============ -->
-    <div class="card" style="margin-top:14px">
-      <h3>Upcoming events</h3>
-      <ul class="cal" id="calendar"></ul>
-    </div>
-
-    <p class="disclaimer">
-      <strong>Not financial advice.</strong> The written outlook on this page is
-      produced by a language model reading a table of numbers and public news. It
-      can be wrong, and it does not know your situation. Prices come from Yahoo
-      Finance via the unofficial <code>yfinance</code> library and are not
-      guaranteed to be accurate. Do your own research.
-    </p>
-
-    <footer>
-      <span id="footMeta"></span>
-    </footer>
-  </main>
+  </div>
 
   <div id="fatal" hidden></div>
 </div>
