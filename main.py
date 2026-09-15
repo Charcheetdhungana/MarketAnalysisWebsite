@@ -4,12 +4,15 @@ QQQ Market Dashboard - daily automation script.
 
 What this file does, in order:
   1. Work out whether the US market actually closed today.
-  2. Download 2 years of daily prices for QQQ and 11 sector ETFs.
-  3. Work out the day's change, the EMAs (9/20/50/200) and Relative Strength.
-  4. Search the web via Tavily and ask Gemini what news drove the day.
+  2. Download 2 years of daily prices for QQQ, 11 sector ETFs, and a set
+     of individually-tracked big-name stocks.
+  3. Work out the day's change, the EMAs (8/21/50/100/200) and Relative
+     Strength.
+  4. Search real financial news via Marketaux and ask Gemini what news
+     drove the day.
   5. Ask Gemini to act as a swing trader and give a view for tomorrow.
-  6. Search the web via Tavily and ask Gemini for the upcoming economic
-     calendar.
+  6. Search real financial news via Marketaux and ask Gemini for the
+     upcoming economic calendar.
   7. Save everything into Supabase.
 
 Run it by hand with:      python main.py
@@ -531,37 +534,51 @@ class Gemini:
             pass
 
 
-def tavily_search(api_key: str, query: str, max_results: int = 6,
-                   days: int | None = None) -> list[dict]:
+def marketaux_search(api_key: str, symbols: str | None = None,
+                      search: str | None = None, published_after: str | None = None,
+                      limit: int = 10) -> list[dict]:
     """
-    Real web search via Tavily, used to ground Gemini in place of Google
-    Search grounding (which needs billing enabled on this account). We
-    fetch real results ourselves and hand them to Gemini's plain text
-    generation as context, instead of using Gemini's built-in search tool.
+    Real, current financial news via Marketaux, used to ground Gemini in
+    place of Google Search grounding (which needs billing enabled on this
+    account). Free tier: 100 requests/day, no billing.
+
+    Marketaux's free-text `search` is far more literal than a semantic web
+    search - an open query like "why did the market fall" returns almost
+    nothing. Its actual strength is entity/ticker filtering, so callers
+    should prefer `symbols` (comma-separated tickers) over `search` for
+    anything news-shaped. `search` is still available for the rare case
+    that needs a keyword rather than a ticker (e.g. economic calendar
+    terms), understanding recall will be weak.
     """
-    body: dict[str, Any] = {
-        "api_key": api_key,
-        "query": query,
-        "search_depth": "basic",
-        "max_results": max_results,
+    params: dict[str, Any] = {
+        "api_token": api_key, "language": "en", "limit": limit,
+        "sort": "published_desc",
     }
-    if days:
-        body["days"] = days
-    resp = requests.post("https://api.tavily.com/search", json=body, timeout=20)
+    if symbols:
+        params["symbols"] = symbols
+    if search:
+        params["search"] = search
+    if published_after:
+        params["published_after"] = published_after
+    resp = requests.get("https://api.marketaux.com/v1/news/all",
+                         params=params, timeout=20)
     resp.raise_for_status()
-    return resp.json().get("results", []) or []
+    return resp.json().get("data", []) or []
 
 
 def format_search_results(results: list[dict]) -> str:
-    """Turn Tavily results into a plain-text block to feed the model."""
+    """Turn Marketaux articles into a plain-text block to feed the model."""
     if not results:
         return "(no search results available)"
     lines = []
     for r in results:
         title = str(r.get("title", "")).strip()
         url = str(r.get("url", "")).strip()
-        content = str(r.get("content", "") or "").strip()[:900]
-        lines.append(f"- TITLE: {title}\n  URL: {url}\n  CONTENT: {content}")
+        source = str(r.get("source", "")).strip()
+        published = str(r.get("published_at", "")).strip()
+        content = str(r.get("description") or r.get("snippet") or "").strip()[:900]
+        lines.append(f"- TITLE: {title}\n  SOURCE: {source}\n  PUBLISHED: {published}\n"
+                     f"  URL: {url}\n  CONTENT: {content}")
     return "\n".join(lines)
 
 
@@ -624,46 +641,47 @@ def build_market_table(rows: list[dict]) -> str:
 
 
 def get_news(g: Gemini, trade_date: str, rows: list[dict],
-             tavily_key: str | None) -> dict:
+             marketaux_key: str | None) -> dict:
     """
     Gemini call 1: what actually moved the market today.
 
     Google Search grounding needs billing enabled on this account (separate
     from the base free text quota), which isn't set up. Instead of dropping
-    real news entirely, we fetch real results ourselves via Tavily (free,
-    no billing) and hand them to Gemini as context - it is instructed to
-    only use what's actually in the search results, never invent stories.
+    real news entirely, we fetch real results ourselves via Marketaux (free,
+    no billing, financial-news-specific) and hand them to Gemini as
+    context - it is instructed to only use what's actually in the search
+    results, never invent stories.
+
+    Query by ticker symbol, not a free-text "why did the market move"
+    question - Marketaux's search is far more literal than a web search
+    and returns almost nothing for open queries; symbol filtering is what
+    it's actually built for, and it also means every result is guaranteed
+    relevant to something this dashboard actually tracks.
     """
     qqq = next((r for r in rows if r["symbol"] == BENCHMARK), {})
-    chg = qqq.get("change_pct") or 0
-    direction = "fell" if chg < 0 else "rose" if chg > 0 else "was flat"
+    symbols = ",".join(r["symbol"] for r in rows)
 
-    # Deliberately does NOT guess a topic (Fed, jobs, inflation, ...) in the
-    # query. An earlier version did, and it biased search toward generic
-    # macro articles, missing the actual story on a day the real driver was
-    # something else entirely (an AI-industry story, in one observed case).
-    # Asking "why did it move" lets the real results surface whatever the
-    # real reason was, instead of only what we assumed it might be.
-    search_context = "(no live search configured - TAVILY_API_KEY not set)"
-    if tavily_key:
+    search_context = "(no live search configured - MARKETAUX_API_KEY not set)"
+    if marketaux_key:
         try:
-            results = tavily_search(
-                tavily_key,
-                f"why US stock market {direction} today {trade_date} Nasdaq QQQ",
-                max_results=8, days=2,
+            results = marketaux_search(
+                marketaux_key, symbols=symbols,
+                published_after=trade_date, limit=12,
             )
             search_context = format_search_results(results)
         except Exception as exc:                      # noqa: BLE001
-            log(f"  ! Tavily search failed: {exc!r}")
+            log(f"  ! Marketaux search failed: {exc!r}")
             search_context = "(search failed, see logs)"
 
     prompt = f"""You are a financial news editor. Today is {trade_date} (US market date).
 The Nasdaq 100 ETF (QQQ) closed at {qqq.get('close')}, a move of {qqq.get('change_pct')}%.
 
-Here are real, current web search results about today's market:
+Here are real, current news articles mentioning the stocks/ETFs this
+dashboard tracks (QQQ, the 11 sector SPDRs, and a set of large individual
+names):
 {search_context}
 
-Using ONLY the search results above, write a market summary. Never invent
+Using ONLY the articles above, write a market summary. Never invent
 a headline, source, or URL that is not actually present above.
 
 Return ONLY valid JSON in exactly this shape, no other text:
@@ -695,7 +713,7 @@ Rules:
 
 
 def get_outlook(g: Gemini, trade_date: str, rows: list[dict],
-                news: dict, leaders: list[str], tavily_key: str | None) -> dict:
+                news: dict, leaders: list[str], marketaux_key: str | None) -> dict:
     """Gemini call 2: the swing trader's read and tomorrow's outlook."""
     table = build_market_table(rows)
     headline_text = "\n".join(
@@ -703,17 +721,23 @@ def get_outlook(g: Gemini, trade_date: str, rows: list[dict],
         for h in news.get("headlines", [])[:6]
     ) or "(no headlines available)"
 
-    search_context = "(no live search configured - TAVILY_API_KEY not set)"
-    if tavily_key:
+    # Marketaux is a news index, not an economic-calendar API - a free-text
+    # query like "scheduled releases next week" (what Tavily used to run)
+    # returns almost nothing. Best-effort here: pull the same recent
+    # ticker-filtered articles and let Gemini pick out any forward-looking
+    # mentions (an earnings date, a scheduled Fed meeting) that happen to
+    # appear in them, rather than a dedicated calendar search.
+    search_context = "(no live search configured - MARKETAUX_API_KEY not set)"
+    if marketaux_key:
         try:
-            results = tavily_search(
-                tavily_key,
-                f"US economic calendar earnings releases scheduled after {trade_date}",
-                max_results=5, days=3,
+            symbols = ",".join(r["symbol"] for r in rows)
+            results = marketaux_search(
+                marketaux_key, symbols=symbols,
+                published_after=trade_date, limit=10,
             )
             search_context = format_search_results(results)
         except Exception as exc:                      # noqa: BLE001
-            log(f"  ! Tavily search failed: {exc!r}")
+            log(f"  ! Marketaux search failed: {exc!r}")
             search_context = "(search failed, see logs)"
 
     prompt = f"""You are a professional swing trader with 15 years of experience
@@ -730,8 +754,9 @@ Today's strongest sectors by relative strength: {', '.join(leaders) or 'n/a'}
 Today's news drivers:
 {headline_text}
 
-Real search results about scheduled US economic releases/earnings in the
-next session:
+Recent real news articles about the stocks/ETFs this dashboard tracks -
+look for any forward-looking mentions of scheduled events (earnings dates,
+Fed meetings, data releases), but do not assume every article has one:
 {search_context}
 
 Give your professional read.
@@ -775,24 +800,33 @@ Rules:
     }
 
 
-def get_calendar(g: Gemini, trade_date: str, tavily_key: str | None) -> list[dict]:
-    """Gemini call 3: the rolling economic calendar for the next 10 days."""
+def get_calendar(g: Gemini, trade_date: str, marketaux_key: str | None) -> list[dict]:
+    """
+    Gemini call 3: the rolling economic calendar for the next 10 days.
+
+    Weakest fit of the three calls for Marketaux: it is a news-article
+    index, not an economic-calendar API, and its free-text search has poor
+    recall for a query like this (unlike the old Tavily web search, which
+    could find calendar-preview articles directly). Best-effort search on
+    macro keywords; if nothing comes back, the JSON rules below already
+    require an empty list rather than a guessed date, so this degrades to
+    "no calendar today" instead of ever showing a wrong one.
+    """
     start = date.fromisoformat(trade_date)
     end = start + timedelta(days=10)
 
-    if not tavily_key:
-        log("  ! TAVILY_API_KEY not set, skipping calendar (would have to guess dates)")
+    if not marketaux_key:
+        log("  ! MARKETAUX_API_KEY not set, skipping calendar (would have to guess dates)")
         return []
 
     try:
-        results = tavily_search(
-            tavily_key,
-            f"US economic calendar CPI FOMC jobs report schedule "
-            f"{start.isoformat()} to {end.isoformat()}",
-            max_results=6, days=7,
+        results = marketaux_search(
+            marketaux_key,
+            search="CPI OR FOMC OR \"jobs report\" OR \"economic calendar\"",
+            published_after=trade_date, limit=8,
         )
     except Exception as exc:                          # noqa: BLE001
-        log(f"  ! Tavily search failed: {exc!r}")
+        log(f"  ! Marketaux search failed: {exc!r}")
         return []
 
     search_context = format_search_results(results)
@@ -977,14 +1011,15 @@ def main() -> int:
         log(f"Using Gemini model: {g.model}")
 
         # Google Search grounding needs billing on this account, so real
-        # news/calendar data comes from Tavily search instead (see
-        # tavily_search()). Without a TAVILY_API_KEY, these calls still run
-        # but explicitly say they have no live data rather than guessing.
-        tavily_key = os.environ.get("TAVILY_API_KEY")
+        # news/calendar data comes from Marketaux instead (see
+        # marketaux_search()). Without a MARKETAUX_API_KEY, these calls
+        # still run but explicitly say they have no live data rather than
+        # guessing.
+        marketaux_key = os.environ.get("MARKETAUX_API_KEY")
         for label, fn in (
-            ("news",     lambda: get_news(g, trade_date, rows, tavily_key)),
-            ("outlook",  lambda: get_outlook(g, trade_date, rows, news, leaders, tavily_key)),
-            ("calendar", lambda: get_calendar(g, trade_date, tavily_key)),
+            ("news",     lambda: get_news(g, trade_date, rows, marketaux_key)),
+            ("outlook",  lambda: get_outlook(g, trade_date, rows, news, leaders, marketaux_key)),
+            ("calendar", lambda: get_calendar(g, trade_date, marketaux_key)),
         ):
             try:
                 log(f"Gemini: {label} ...")

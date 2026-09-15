@@ -19,7 +19,7 @@ GitHub Actions          Python (main.py)         Supabase            Vercel
 QQQ's price with daily / weekly / monthly P&amp;L (properly compounded, not
 added), all 11 sector SPDR ETFs ranked by relative strength, and an
 AI-written summary of the macro news that drove the session, with real
-source links via Tavily search.
+source links via Marketaux financial news search.
 
 **Technicals**
 EMA 8 / 21 / 50 / 100 / 200 for QQQ, charted as candlesticks, plus a
@@ -105,18 +105,29 @@ A **public** repo gets unlimited free Actions minutes. A private one gets
 
 1. Go to aistudio.google.com and sign in with a Google account.
 2. Click **Get API key -> Create API key**.
-3. Copy it. It starts with `AIza`.
+3. Copy it.
+
+### Step 3b. Get a Marketaux API key
+
+Gemini's own web search (grounding) needs billing enabled on the Google
+Cloud project, which this project doesn't require - real news and the
+economic calendar instead come from Marketaux, a financial news API with
+a genuinely free tier (100 requests/day, no card).
+
+1. Go to marketaux.com and sign up.
+2. Copy your API token from the dashboard.
 
 ### Step 4. Put the secrets into GitHub
 
 In your repository: **Settings -> Secrets and variables -> Actions ->
-New repository secret**. Add three, one at a time:
+New repository secret**. Add four, one at a time:
 
 | Name | Value |
 |---|---|
 | `SUPABASE_URL` | your Project URL |
 | `SUPABASE_SERVICE_KEY` | the **secret** key (`sb_secret_...`) |
 | `GEMINI_API_KEY` | your Gemini key |
+| `MARKETAUX_API_KEY` | your Marketaux token |
 
 Names must match exactly - they are case sensitive. Watch for a stray space
 at the end when you paste.

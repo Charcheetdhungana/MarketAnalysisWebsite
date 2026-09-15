@@ -63,7 +63,7 @@ jobs:
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           GEMINI_API_KEY:       ${{ secrets.GEMINI_API_KEY }}
           GEMINI_MODEL:         ${{ vars.GEMINI_MODEL || 'gemini-3.5-flash' }}
-          TAVILY_API_KEY:       ${{ secrets.TAVILY_API_KEY }}
+          MARKETAUX_API_KEY:    ${{ secrets.MARKETAUX_API_KEY }}
         run: |
           if [ "${{ github.event.inputs.force }}" = "yes" ]; then
             python main.py --force
