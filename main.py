@@ -54,6 +54,19 @@ INSTRUMENTS: dict[str, dict[str, str]] = {
     "XLRE": {"name": "Real Estate",              "asset_class": "sector"},
     "XLU":  {"name": "Utilities",                "asset_class": "sector"},
     "XLC":  {"name": "Communication Services",   "asset_class": "sector"},
+
+    # Individual big-name stocks for the Main Index side panel. Not part
+    # of relative-strength ranking (that stays sector-only) - these are
+    # just tracked and shown grouped by stock_group.
+    "AAPL":  {"name": "Apple",       "asset_class": "stock", "stock_group": "Tech"},
+    "MSFT":  {"name": "Microsoft",   "asset_class": "stock", "stock_group": "Tech"},
+    "GOOGL": {"name": "Alphabet",    "asset_class": "stock", "stock_group": "Tech"},
+    "CRM":   {"name": "Salesforce",  "asset_class": "stock", "stock_group": "Software"},
+    "ORCL":  {"name": "Oracle",      "asset_class": "stock", "stock_group": "Software"},
+    "ADBE":  {"name": "Adobe",       "asset_class": "stock", "stock_group": "Software"},
+    "NVDA":  {"name": "Nvidia",      "asset_class": "stock", "stock_group": "Chips & Memory"},
+    "AMD":   {"name": "AMD",         "asset_class": "stock", "stock_group": "Chips & Memory"},
+    "MU":    {"name": "Micron",      "asset_class": "stock", "stock_group": "Chips & Memory"},
 }
 
 EMA_SPANS = (8, 21, 50, 100, 200)
@@ -190,6 +203,7 @@ def build_rows(closes: dict[str, pd.Series],
             "symbol":      symbol,
             "name":        meta.get("name", symbol),
             "asset_class": meta.get("asset_class", "sector"),
+            "stock_group": meta.get("stock_group"),
             "close":       round_or_none(close),
             "prev_close":  round_or_none(prev),
             "change":      round_or_none(change),

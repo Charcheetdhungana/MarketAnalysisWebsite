@@ -45,25 +45,25 @@
 @media (prefers-color-scheme: dark){
   :root:where(:not([data-theme="light"])){
     color-scheme: dark;
-    --page:#0d0d0d; --surface:#1a1a19;
-    --ink:#ffffff; --ink-2:#c3c2b7; --ink-muted:#898781;
-    --grid:#2c2c2a; --axis:#383835; --border:rgba(255,255,255,.10);
+    --page:#0a0f1e; --surface:#121a2e;
+    --ink:#ffffff; --ink-2:#b8c2d9; --ink-muted:#7c88a3;
+    --grid:#1f2a42; --axis:#2c3b5c; --border:rgba(140,170,230,.16);
     --up:#0ca30c; --up-text:#0ca30c; --down:#d03b3b;
     --ema8:#0ca30c; --ema21:#d03b3b; --ema50:#f07ab8;
-    --ema100:#d8d6cc; --ema200:#6b6a63;
-    --pos:#3987e5; --neg:#d03b3b; --mid:#383835;
+    --ema100:#c8d0e6; --ema200:#4a5578;
+    --pos:#4d94f0; --neg:#d03b3b; --mid:#2c3b5c;
     --shadow:0 1px 2px rgba(0,0,0,.4), 0 6px 18px rgba(0,0,0,.3);
   }
 }
 :root[data-theme="dark"]{
   color-scheme: dark;
-  --page:#0d0d0d; --surface:#1a1a19;
-  --ink:#ffffff; --ink-2:#c3c2b7; --ink-muted:#898781;
-  --grid:#2c2c2a; --axis:#383835; --border:rgba(255,255,255,.10);
+  --page:#0a0f1e; --surface:#121a2e;
+  --ink:#ffffff; --ink-2:#b8c2d9; --ink-muted:#7c88a3;
+  --grid:#1f2a42; --axis:#2c3b5c; --border:rgba(140,170,230,.16);
   --up:#0ca30c; --up-text:#0ca30c; --down:#d03b3b;
   --ema8:#0ca30c; --ema21:#d03b3b; --ema50:#f07ab8;
-  --ema100:#d8d6cc; --ema200:#6b6a63;
-  --pos:#3987e5; --neg:#d03b3b; --mid:#383835;
+  --ema100:#c8d0e6; --ema200:#4a5578;
+  --pos:#4d94f0; --neg:#d03b3b; --mid:#2c3b5c;
   --shadow:0 1px 2px rgba(0,0,0,.4), 0 6px 18px rgba(0,0,0,.3);
 }
 
@@ -74,7 +74,7 @@ body{
   font:15px/1.55 "Ubuntu",system-ui,-apple-system,"Segoe UI",sans-serif;
   -webkit-font-smoothing:antialiased;
 }
-.wrap{max-width:1180px;margin:0 auto;padding:20px 16px 64px}
+.wrap{max-width:1760px;margin:0 auto;padding:20px 32px 64px}
 a{color:inherit}
 
 /* ---------- header ---------- */
@@ -118,13 +118,31 @@ h3{font-size:14px;font-weight:620;margin:0 0 10px}
   border-radius:var(--radius);padding:16px;box-shadow:var(--shadow);
 }
 
+/* ---------- Main Index row: QQQ hero + big-names side panel ---------- */
+.mainRow{display:grid;grid-template-columns:1.3fr 1fr;gap:14px}
+@media (max-width:760px){.mainRow{grid-template-columns:1fr}}
+
 /* ---------- hero price tiles ---------- */
 .hero{display:flex;flex-direction:column;gap:4px}
 .hero .sym{font-size:12px;font-weight:650;letter-spacing:.06em;color:var(--ink-muted)}
 .hero .nm{font-size:12px;color:var(--ink-muted);margin-top:-2px}
-.hero .px{font-size:38px;font-weight:600;letter-spacing:-.02em;line-height:1.1;margin-top:6px}
+.hero .px{font-size:44px;font-weight:700;letter-spacing:-.02em;line-height:1.1;margin-top:6px}
+.hero .px.up{color:var(--up-text)} .hero .px.down{color:var(--down)}
 .hero .dl{font-size:15px;font-weight:560;display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
+.hero .tabs{margin-top:12px;margin-bottom:0}
 .up{color:var(--up-text)} .down{color:var(--down)} .flat{color:var(--ink-muted)}
+
+/* ---------- big-name stock panel (Tech / Software / Chips & Memory) ---------- */
+.bigGroup + .bigGroup{margin-top:18px;padding-top:16px;border-top:1px solid var(--grid)}
+.bigGroup h4{
+  font-size:11px;font-weight:650;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--ink-muted);margin:0 0 10px;
+}
+.bigTicker{display:flex;justify-content:space-between;align-items:baseline;padding:6px 0}
+.bigTicker .t{font-size:20px;font-weight:700;letter-spacing:-.01em}
+.bigTicker .t .nm{font-size:12px;font-weight:500;color:var(--ink-muted);margin-left:8px}
+.bigTicker .v{font-size:14px;font-weight:600;text-align:right;white-space:nowrap}
+.bigTicker .v .px{display:block;font-size:15px;font-weight:650;color:var(--ink)}
 
 /* ---------- sector table ---------- */
 /* A table that is wider than its card scrolls sideways on its own.
@@ -300,18 +318,22 @@ footer{
 
     <!-- ============ MAIN INDEX ============ -->
     <h2 class="headline">Main Index</h2>
-    <div class="card" id="mainIndexCard">
-      <div class="hero">
-        <span class="sym">QQQ</span>
-        <span class="nm" id="mainName"></span>
-        <div class="px" id="mainPrice"></div>
-        <div class="tabs" id="pnlTabs" role="tablist">
-          <button role="tab" aria-selected="true"  data-period="day">Daily</button>
-          <button role="tab" aria-selected="false" data-period="week">Weekly</button>
-          <button role="tab" aria-selected="false" data-period="month">Monthly</button>
+    <div class="mainRow">
+      <div class="card" id="mainIndexCard">
+        <div class="hero">
+          <span class="sym">QQQ</span>
+          <span class="nm" id="mainName"></span>
+          <div class="px" id="mainPrice"></div>
+          <div class="dl" id="mainPnl"></div>
+          <div class="tabs" id="pnlTabs" role="tablist">
+            <button role="tab" aria-selected="true"  data-period="day">Daily</button>
+            <button role="tab" aria-selected="false" data-period="week">Weekly</button>
+            <button role="tab" aria-selected="false" data-period="month">Monthly</button>
+          </div>
         </div>
-        <div class="dl" id="mainPnl"></div>
       </div>
+
+      <div class="card" id="bigNamesCard"></div>
     </div>
 
     <div class="card" style="margin-top:14px">
@@ -681,7 +703,9 @@ function renderMainIndex() {
   const r = STATE.prices.find(p => p.symbol === "QQQ");
   if (!r) return;
   $("mainName").textContent = r.name || "";
-  $("mainPrice").textContent = num(r.close);
+  const priceEl = $("mainPrice");
+  priceEl.textContent = num(r.close);
+  priceEl.className = `px ${dirClass(r.change)}`;
 
   const hist = STATE.qqqHistory || [];
   const weekPct  = compoundReturn(hist, mondayOf(r.trade_date));
@@ -712,6 +736,38 @@ function renderMainIndex() {
       b.setAttribute("aria-selected", "true");
       paint(b.dataset.period);
     };
+  });
+}
+
+const STOCK_GROUP_ORDER = ["Tech", "Software", "Chips & Memory"];
+
+function renderBigNames() {
+  const stocks = STATE.prices.filter(p => p.asset_class === "stock");
+  const box = $("bigNamesCard"); box.innerHTML = "";
+
+  if (!stocks.length) {
+    box.appendChild(el("p", "muted", "Stock data will appear after the first successful run."));
+    return;
+  }
+
+  STOCK_GROUP_ORDER.forEach(group => {
+    const rows = stocks.filter(r => r.stock_group === group);
+    if (!rows.length) return;
+
+    const g = el("div", "bigGroup");
+    g.appendChild(el("h4", null, group));
+    rows.forEach(r => {
+      const row = el("div", "bigTicker");
+      const t = el("div", "t");
+      t.append(document.createTextNode(r.symbol), el("span", "nm", r.name || ""));
+      const v = el("div", `v ${dirClass(r.change)}`);
+      const px = el("span", "px", num(r.close));
+      v.appendChild(px);
+      v.appendChild(document.createTextNode(`${arrow(r.change)} ${pct(r.change_pct)}`));
+      row.append(t, v);
+      g.appendChild(row);
+    });
+    box.appendChild(g);
   });
 }
 
@@ -928,6 +984,7 @@ async function load() {
       `Last updated ${rep.updated_at ? new Date(rep.updated_at).toLocaleString("en-AU") : "–"}.`;
 
     renderMainIndex();
+    renderBigNames();
     renderNews();
     renderSectorTable();
     renderEma();
