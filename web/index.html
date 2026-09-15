@@ -142,16 +142,18 @@ h3{font-size:14px;font-weight:620;margin:0 0 10px}
 .up{color:var(--up-text)} .down{color:var(--down)} .flat{color:var(--ink-muted)}
 
 /* ---------- big-name stock panel (Tech / Software / Chips & Memory) ---------- */
-.bigGroup + .bigGroup{margin-top:18px;padding-top:16px;border-top:1px solid var(--grid)}
+.bigNames{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
+@media (max-width:760px){.bigNames{grid-template-columns:1fr}}
 .bigGroup h4{
   font-size:11px;font-weight:650;letter-spacing:.08em;text-transform:uppercase;
-  color:var(--ink-muted);margin:0 0 10px;
+  color:var(--ink-muted);margin:0 0 12px;
 }
-.bigTicker{display:flex;justify-content:space-between;align-items:baseline;padding:6px 0}
-.bigTicker .t{font-size:20px;font-weight:700;letter-spacing:-.01em}
-.bigTicker .t .nm{font-size:12px;font-weight:500;color:var(--ink-muted);margin-left:8px}
-.bigTicker .v{font-size:14px;font-weight:600;text-align:right;white-space:nowrap}
-.bigTicker .v .px{display:block;font-size:15px;font-weight:650;color:var(--ink)}
+.bigTicker{display:flex;justify-content:space-between;align-items:baseline;padding:10px 0;border-bottom:1px solid var(--grid)}
+.bigTicker:last-child{border-bottom:0}
+.bigTicker .t{font-size:24px;font-weight:700;letter-spacing:-.01em}
+.bigTicker .t .nm{display:block;font-size:12px;font-weight:500;color:var(--ink-muted);margin-top:2px}
+.bigTicker .v{font-size:13px;font-weight:600;text-align:right;white-space:nowrap}
+.bigTicker .v .px{display:block;font-size:16px;font-weight:700;color:var(--ink)}
 
 /* ---------- sector table ---------- */
 /* A table that is wider than its card scrolls sideways on its own.
@@ -250,6 +252,9 @@ ul.plain li{margin-bottom:5px}
 .news a:hover{text-decoration:underline}
 .news p{margin:5px 0 0;font-size:13.5px;color:var(--ink-2);line-height:1.55}
 .news .src{font-size:11.5px;color:var(--ink-muted);margin-top:6px}
+.news.big li{padding:18px 0}
+.news.big a{font-size:19px;font-weight:650}
+.news.big p{font-size:15px}
 
 /* ---------- calendar ---------- */
 .cal{list-style:none;margin:0;padding:0}
@@ -342,14 +347,21 @@ footer{
         </div>
       </div>
 
-      <div class="card" id="bigNamesCard"></div>
+      <div class="card" id="marketSummaryCard">
+        <h3>Market Summary</h3>
+        <p class="prose" id="newsSummary"></p>
+      </div>
     </div>
 
     <div class="card" style="margin-top:14px">
       <h3>What drove the market today</h3>
-      <p class="prose" id="newsSummary"></p>
-      <ul class="news" id="headlines"></ul>
+      <ul class="news big" id="headlines"></ul>
       <p class="muted" id="sourceLine" style="margin-top:14px"></p>
+    </div>
+
+    <div class="card" style="margin-top:14px">
+      <h3>Big Names</h3>
+      <div id="bigNamesCard"></div>
     </div>
 
     <!-- ============ SECTOR PERFORMANCE ============ -->
@@ -759,6 +771,7 @@ function renderBigNames() {
     return;
   }
 
+  const grid = el("div", "bigNames");
   STOCK_GROUP_ORDER.forEach(group => {
     const rows = stocks.filter(r => r.stock_group === group);
     if (!rows.length) return;
@@ -776,8 +789,9 @@ function renderBigNames() {
       row.append(t, v);
       g.appendChild(row);
     });
-    box.appendChild(g);
+    grid.appendChild(g);
   });
+  box.appendChild(grid);
 }
 
 function renderSectorTable() {
