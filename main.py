@@ -540,7 +540,7 @@ def format_search_results(results: list[dict]) -> str:
     for r in results:
         title = str(r.get("title", "")).strip()
         url = str(r.get("url", "")).strip()
-        content = str(r.get("content", "") or "").strip()[:500]
+        content = str(r.get("content", "") or "").strip()[:900]
         lines.append(f"- TITLE: {title}\n  URL: {url}\n  CONTENT: {content}")
     return "\n".join(lines)
 
@@ -615,14 +615,22 @@ def get_news(g: Gemini, trade_date: str, rows: list[dict],
     only use what's actually in the search results, never invent stories.
     """
     qqq = next((r for r in rows if r["symbol"] == BENCHMARK), {})
+    chg = qqq.get("change_pct") or 0
+    direction = "fell" if chg < 0 else "rose" if chg > 0 else "was flat"
 
+    # Deliberately does NOT guess a topic (Fed, jobs, inflation, ...) in the
+    # query. An earlier version did, and it biased search toward generic
+    # macro articles, missing the actual story on a day the real driver was
+    # something else entirely (an AI-industry story, in one observed case).
+    # Asking "why did it move" lets the real results surface whatever the
+    # real reason was, instead of only what we assumed it might be.
     search_context = "(no live search configured - TAVILY_API_KEY not set)"
     if tavily_key:
         try:
             results = tavily_search(
                 tavily_key,
-                f"US stock market news today {trade_date} Nasdaq Fed inflation jobs",
-                max_results=6, days=2,
+                f"why US stock market {direction} today {trade_date} Nasdaq QQQ",
+                max_results=8, days=2,
             )
             search_context = format_search_results(results)
         except Exception as exc:                      # noqa: BLE001
